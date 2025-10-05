@@ -9,6 +9,8 @@ from plone import api
 from Products.CMFCore.utils import _checkPermission
 from Products.CMFCore.permissions import AccessInactivePortalContent
 from plone.typesense import log
+from zope.component import getUtility
+from plone.typesense.global_utilities.typesense import ITypesenseConnector
 
 
 @implementer(interfaces.ITypesenseManager)
@@ -32,13 +34,43 @@ class TypesenseManager:
             value = False
         return value
 
-    # XXX
+    @property
+    def active(self):
+        """Check if Typesense is active (enabled and configured)."""
+        return self.enabled
+
+    @property
+    def raise_search_exception(self):
+        """Whether to raise exceptions on search errors or fallback to catalog."""
+        try:
+            return api.portal.get_registry_record(
+                "raise_search_exception", interfaces.ITypesenseSettings, False
+            )
+        except KeyError:
+            return False
+
+    @property
+    def collection_name(self):
+        """Get the Typesense collection name."""
+        connector = getUtility(ITypesenseConnector)
+        return connector.collection_base_name
+
     def get_record_by_path(self, path: str) -> dict:
-        body = {"query": {"match": {"path.path": path}}}
-        results = self.connection.search(index=self.index_name, body=body)
-        hits = results.get("hits", {}).get("hits", [])
-        record = hits[0]["_source"] if hits else {}
-        return record
+        """Get a single record by path from Typesense."""
+        params = {
+            'q': '*',
+            'filter_by': f'path:={path}',
+            'per_page': 1
+        }
+        try:
+            connector = getUtility(ITypesenseConnector)
+            client = connector.get_client()
+            results = client.collections[self.collection_name].documents.search(params)
+            hits = results.get("hits", [])
+            return hits[0]["document"] if hits else {}
+        except Exception as e:
+            log.error(f"Error fetching record by path {path}: {e}", exc_info=True)
+            return {}
 
     @property
     def bulk_size(self) -> int:
@@ -61,6 +93,60 @@ class TypesenseManager:
         except KeyError:
             value = False
         return value
+
+    @property
+    def highlight_threshold(self):
+        """Threshold for highlight fragments."""
+        try:
+            return api.portal.get_registry_record(
+                "highlight_threshold", interfaces.ITypesenseSettings, 200
+            )
+        except KeyError:
+            return 200
+
+    def _search(self, query_params, sort=None, start=0, size=None):
+        """Execute Typesense search with given parameters.
+
+        @param query_params: Typesense search parameters dict with q, query_by, filter_by, etc.
+        @param sort: List of sort tuples/dicts from normalize()
+        @param start: Starting position for results
+        @param size: Number of results to return
+        @return: dict with 'hits' (list of hits) and 'found' (total count)
+        """
+        connector = getUtility(ITypesenseConnector)
+        client = connector.get_client()
+
+        # Convert pagination
+        per_page = size if size else self.bulk_size
+        page = (start // per_page) + 1 if start > 0 else 1
+
+        params = query_params.copy()
+        params['per_page'] = per_page
+        params['page'] = page
+
+        # Convert sort to Typesense format
+        if sort:
+            sort_parts = []
+            for sort_item in sort:
+                if isinstance(sort_item, dict):
+                    for field, opts in sort_item.items():
+                        if isinstance(opts, dict):
+                            order = opts.get('order', 'asc')
+                            sort_parts.append(f"{field}:{order}")
+                elif isinstance(sort_item, str) and sort_item != '_score':
+                    sort_parts.append(f"{sort_item}:asc")
+            if sort_parts:
+                params['sort_by'] = ','.join(sort_parts)
+
+        log.debug(f"Typesense search params: {params}")
+
+        # Execute search
+        results = client.collections[self.collection_name].documents.search(params)
+
+        return {
+            'hits': results.get('hits', []),
+            'found': results.get('found', 0)
+        }
 
     def search(self, query: dict, factory=None, **query_params) -> LazyMap:
         """

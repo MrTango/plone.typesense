@@ -69,7 +69,7 @@ Typesense
 
 This package requires a typesense search engine running.
 
-You can run one by using `podman-compose` up or `docker-compose up`.
+You can run one by using `podman-compose` up or `docker compose up`.
 
 Please read this for a [quick docker based setup](https://typesense.org/docs/guide/install-typesense.html#option-2-local-machine-self-hosting).
 

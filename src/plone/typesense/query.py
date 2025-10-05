@@ -8,7 +8,6 @@ from zope.interface import implementer
 @implementer(IQueryAssembler)
 class QueryAssembler:
     def __init__(self, request, manager):
-        # self.es = manager
         self.catalog = manager.catalog
         self.request = request
 
@@ -25,7 +24,6 @@ class QueryAssembler:
         if sort:
             for sort_str in sort.split(","):
                 sort_on.append({sort_str: {"order": sort_order}})
-        sort_on.append("_score")
         if "b_size" in query:
             del query["b_size"]
         if "b_start" in query:
@@ -35,39 +33,63 @@ class QueryAssembler:
         return query, sort_on
 
     def __call__(self, dquery):
-        filters = []
-        matches = []
+        """Build Typesense search parameters from Plone query dict.
+
+        Returns dict with:
+        - 'q': search text
+        - 'query_by': fields to search in
+        - 'filter_by': filter expression
+        - 'sort_by': sorting expression
+        """
         catalog = self.catalog._catalog
         idxs = catalog.indexes.keys()
-        query = {"match_all": {}}
         ts_only_indexes = get_ts_only_indexes()
+
+        # Collect filters and text queries separately
+        filters = []
+        text_query = None
+        query_by_fields = []
+
         for key, value in dquery.items():
             if key not in idxs and key not in ts_only_indexes:
                 continue
+
             index = getIndex(catalog, key)
             if index is None and key in ts_only_indexes:
                 # deleted index for plone performance but still need on TS
                 index = TZCTextIndex(catalog, key)
-            qq = index.get_query(key, value)
-            if qq is None:
-                continue
-            if index is not None and index.filter_query:
-                if isinstance(qq, list):
-                    filters.extend(qq)
-                else:
-                    filters.append(qq)
-            else:
-                if isinstance(qq, list):
-                    matches.extend(qq)
-                else:
-                    matches.append(qq)
-        if len(filters) == 0 and len(matches) == 0:
-            return query
-        query = {"bool": {}}
-        if len(filters) > 0:
-            query["bool"]["filter"] = filters
 
-        if len(matches) > 0:
-            query["bool"]["should"] = matches
-            query["bool"]["minimum_should_match"] = 1
-        return query
+            if index is None:
+                continue
+
+            # Check if this is a text search query
+            if hasattr(index, 'get_typesense_query'):
+                ts_query = index.get_typesense_query(key, value)
+                if ts_query:
+                    # Text queries return {'q': '...', 'query_by': '...'}
+                    text_query = ts_query.get('q', text_query)
+                    if ts_query.get('query_by'):
+                        query_by_fields.append(ts_query['query_by'])
+
+            # Check if this is a filter
+            if hasattr(index, 'get_typesense_filter'):
+                ts_filter = index.get_typesense_filter(key, value)
+                if ts_filter:
+                    filters.append(ts_filter)
+
+        # Build Typesense search parameters
+        params = {}
+
+        # Add text search if present
+        if text_query:
+            params['q'] = text_query
+            params['query_by'] = ','.join(query_by_fields) if query_by_fields else 'SearchableText'
+        else:
+            # Typesense requires 'q' parameter, use '*' for match-all
+            params['q'] = '*'
+
+        # Add filters
+        if filters:
+            params['filter_by'] = ' && '.join(filters)
+
+        return params

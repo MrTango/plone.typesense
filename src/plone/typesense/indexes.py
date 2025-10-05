@@ -1,5 +1,4 @@
 from datetime import date, datetime
-import time
 from Acquisition import aq_base, aq_parent
 from DateTime import DateTime
 from Missing import MV
@@ -73,14 +72,57 @@ class BaseIndex:
             return None
         return value
 
+    def get_typesense_filter(self, name, value):
+        """Convert Plone query to Typesense filter_by syntax.
+
+        Returns a filter string like 'field:=value' or None if no filter.
+        """
+        return None
+
+    def get_typesense_query(self, name, value):
+        """Convert Plone query to Typesense query parameters (q, query_by).
+
+        Returns a dict with 'q' and 'query_by' or None.
+        """
+        return None
+
+    def _normalize_query(self, value):
+        """Normalize query value from various formats."""
+        if isinstance(value, dict):
+            return value.get('query', value)
+        return value
+
 
 class TKeywordIndex(BaseIndex):
     def extract(self, name, data):
         return data[name] or []
 
+    def get_typesense_filter(self, name, value):
+        """Convert keyword query to Typesense filter.
+
+        Examples:
+          portal_type='Document' -> 'portal_type:=Document'
+          portal_type=['Document', 'News Item'] -> 'portal_type:[Document, `News Item`]'
+        """
+        if isinstance(value, (list, tuple, set)):
+            # Escape values with spaces using backticks
+            escaped_values = [f'`{v}`' if ' ' in str(v) else str(v) for v in value]
+            return f"{name}:[{', '.join(escaped_values)}]"
+        else:
+            # Single value - exact match
+            val = f'`{value}`' if ' ' in str(value) else str(value)
+            return f"{name}:={val}"
+
 
 class TFieldIndex(BaseIndex):
-    pass
+    def get_typesense_filter(self, name, value):
+        """Convert field query to Typesense filter.
+
+        Examples:
+          Type='Document' -> 'Type:=Document'
+        """
+        val = f'`{value}`' if ' ' in str(value) else str(value)
+        return f"{name}:={val}"
 
 
 class TDateIndex(BaseIndex):
@@ -110,27 +152,44 @@ class TDateIndex(BaseIndex):
             return int(utcvalue.strftime("%s"))
         return value
 
-    def get_query(self, name, value):
-        range_ = value.get("range")
-        query = value.get("query")
+    def get_typesense_filter(self, name, value):
+        """Convert date query to Typesense filter.
+
+        Examples:
+          created={'query': dt, 'range': 'min'} -> 'created:>=1234567890'
+          created={'query': dt, 'range': 'max'} -> 'created:<=1234567890'
+          created={'query': [dt1, dt2], 'range': 'min:max'} -> 'created:>=1234567890 && created:<=1234567899'
+        """
+        if isinstance(value, dict):
+            range_ = value.get("range")
+            query = value.get("query")
+        else:
+            # Simple date value
+            query = value
+            range_ = None
+
         if query is None:
             return None
+
         if range_ is None:
-            if type(query) in (list, tuple):
+            if isinstance(query, (list, tuple)):
                 range_ = "min"
 
-        first = _zdt(_one(query)).ISO8601()
+        # Convert to timestamp
+        first_dt = _zdt(_one(query))
+        first_ts = int(first_dt.utcdatetime().strftime("%s"))
+
         if range_ == "min":
-            return {"range": {name: {"gte": first}}}
+            return f"{name}:>={first_ts}"
         if range_ == "max":
-            return {"range": {name: {"lte": first}}}
-        if (
-            range_ in ("min:max", "minmax")
-            and (type(query) in (list, tuple))
-            and len(query) == 2
-        ):
-            return {"range": {name: {"gte": first, "lte": _zdt(query[1]).ISO8601()}}}
-        return None
+            return f"{name}:<={first_ts}"
+        if range_ in ("min:max", "minmax") and isinstance(query, (list, tuple)) and len(query) == 2:
+            second_dt = _zdt(query[1])
+            second_ts = int(second_dt.utcdatetime().strftime("%s"))
+            return f"{name}:>={first_ts} && {name}:<={second_ts}"
+
+        # Default: exact match
+        return f"{name}:={first_ts}"
 
     def extract(self, name, data):
         try:
@@ -176,29 +235,54 @@ class TZCTextIndex(BaseIndex):
             return "\n".join(all_texts)
         return None
 
-    def get_query(self, name, value):
-        value = self._normalize_query(value)
-        # ES doesn't care about * like zope catalog does
-        clean_value = value.strip("*") if value else ""
-        queries = [{"match_phrase": {name: {"query": clean_value, "slop": 2}}}]
-        if name in ("Title", "SearchableText"):
-            # titles have most importance... we override here...
-            queries.append(
-                {"match_phrase_prefix": {"Title": {"query": clean_value, "boost": 2}}}
-            )
-        if name != "Title":
-            queries.append({"match": {name: {"query": clean_value}}})
+    def get_typesense_query(self, name, value):
+        """Convert text search to Typesense query parameters.
 
-        return queries
+        Returns dict with 'q' (search text) and 'query_by' (fields to search).
+        """
+        value = self._normalize_query(value)
+        # Strip wildcards - Typesense handles fuzzy/infix matching via schema
+        clean_value = value.strip("*") if value else ""
+
+        if not clean_value:
+            return None
+
+        # Build query_by list - search in the requested field
+        query_by_fields = [name]
+
+        # For SearchableText, also search Title with higher weight
+        if name == "SearchableText":
+            query_by_fields = ["Title", "SearchableText"]
+
+        return {
+            'q': clean_value,
+            'query_by': ','.join(query_by_fields)
+        }
 
 
 class TBooleanIndex(BaseIndex):
     def create_mapping(self, name):
         return {"type": "boolean"}
 
+    def get_typesense_filter(self, name, value):
+        """Convert boolean query to Typesense filter.
+
+        Examples:
+          is_folderish=True -> 'is_folderish:=true'
+          is_folderish=False -> 'is_folderish:=false'
+        """
+        bool_val = 'true' if value else 'false'
+        return f"{name}:={bool_val}"
+
 
 class TUUIDIndex(BaseIndex):
-    pass
+    def get_typesense_filter(self, name, value):
+        """Convert UUID query to Typesense filter.
+
+        Examples:
+          UID='abc123' -> 'UID:=abc123'
+        """
+        return f"{name}:={value}"
 
 
 class TExtendedPathIndex(BaseIndex):
@@ -232,51 +316,50 @@ class TExtendedPathIndex(BaseIndex):
         return "/".join(path)
 
     def extract(self, name, data):
-        return data[name]["path"]
+        return data[name]
 
-    def get_query(self, name, value):
+    def get_typesense_filter(self, name, value):
+        """Convert path query to Typesense filter.
+
+        Examples:
+          path='/folder' -> 'path:=/folder*'
+          path={'query': '/folder', 'depth': 0} -> 'path:=/folder'
+          path={'query': '/folder', 'depth': 1} -> 'path:=/folder* && depth:<=2'
+          path={'query': ['/a', '/b']} -> 'path:=/a* || path:=/b*'
+        """
         if isinstance(value, str):
-            paths = value
+            paths = [value]
             depth = -1
-            navtree = False
-            navtree_start = 0
         else:
             depth = value.get("depth", -1)
             paths = value.get("query")
-            navtree = value.get("navtree", False)
-            navtree_start = value.get("navtree_start", 0)
+            if isinstance(paths, str):
+                paths = [paths]
+
         if not paths:
             return None
-        if isinstance(paths, str):
-            paths = [paths]
-        andfilters = []
+
+        # Build filter for each path
+        path_filters = []
         for path in paths:
             spath = path.split("/")
-            gtcompare = "gt"
-            start = len(spath) - 1
-            if navtree:
-                start = start + navtree_start
-                end = navtree_start + depth
-            else:
-                end = start + depth
-            if navtree or depth == -1:
-                gtcompare = "gte"
-            filters = []
+            path_depth = len(spath) - 1
+
             if depth == 0:
-                andfilters.append(
-                    {"bool": {"filter": {"term": {f"{name}.path": path}}}}
-                )
-                continue
-            filters = [
-                {"prefix": {f"{name}.path": path}},
-                {"range": {f"{name}.depth": {gtcompare: start}}},
-            ]
-            if depth != -1:
-                filters.append({"range": {f"{name}.depth": {"lte": end}}})
-            andfilters.append({"bool": {"must": filters}})
-        if len(andfilters) > 1:
-            return {"bool": {"should": andfilters}}
-        return andfilters[0]
+                # Exact path match
+                path_filters.append(f"path:={path}")
+            elif depth == -1:
+                # All descendants (unlimited depth)
+                path_filters.append(f"path:={path}*")
+            else:
+                # Limited depth
+                max_depth = path_depth + depth
+                path_filters.append(f"(path:={path}* && depth:<={max_depth})")
+
+        # Combine multiple paths with OR
+        if len(path_filters) > 1:
+            return '(' + ' || '.join(path_filters) + ')'
+        return path_filters[0]
 
 
 class TGopipIndex(BaseIndex):
@@ -288,6 +371,24 @@ class TGopipIndex(BaseIndex):
         if hasattr(parent, "getObjectPosition"):
             return parent.getObjectPosition(obj.getId())
         return None
+
+    def get_typesense_filter(self, name, value):
+        """Convert gopip (position) query to Typesense filter.
+
+        Examples:
+          getObjPositionInParent=5 -> 'getObjPositionInParent:=5'
+          getObjPositionInParent={'query': 5, 'range': 'min'} -> 'getObjPositionInParent:>=5'
+        """
+        if isinstance(value, dict):
+            range_ = value.get("range")
+            query = value.get("query")
+            if range_ == "min":
+                return f"{name}:>={query}"
+            elif range_ == "max":
+                return f"{name}:<={query}"
+            else:
+                return f"{name}:={query}"
+        return f"{name}:={value}"
 
 
 class TDateRangeIndex(BaseIndex):
@@ -315,13 +416,18 @@ class TDateRangeIndex(BaseIndex):
             f"{self.index.id}2": until.strftime("%s"),
         }
 
-    def get_query(self, name, value):
+    def get_typesense_filter(self, name, value):
+        """Convert date range query to Typesense filter.
+
+        Checks if value falls within the range defined by two date fields.
+        Examples:
+          effective_range=DateTime() -> 'effective_range1:<=1234567890 && effective_range2:>=1234567890'
+        """
         value = self._normalize_query(value)
-        date_iso = value.ISO8601()
-        return [
-            {"range": {f"{name}.{name}1": {"lte": date_iso}}},
-            {"range": {f"{name}.{name}2": {"gte": date_iso}}},
-        ]
+        if isinstance(value, str):
+            value = DateTime(value)
+        timestamp = int(value.utcdatetime().strftime("%s"))
+        return f"{name}1:<={timestamp} && {name}2:>={timestamp}"
 
 
 class TRecurringIndex(TDateIndex):

@@ -35,7 +35,7 @@ class TypesenseBrain:
 
     def getPath(self):
         """Get the physical path for this record"""
-        return self._record["path"]["path"]
+        return self._record["path"]
 
     def getURL(self, relative=0):
         """Generate a URL for this record"""
@@ -65,28 +65,35 @@ class TypesenseBrain:
 
 
 def BrainFactory(manager):
-    def factory(result: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
+    def factory(hit: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
+        """Convert Typesense hit to catalog brain.
+
+        @param hit: Typesense hit with 'document' containing indexed fields
+        """
         catalog = manager.catalog
         zcatalog = catalog._catalog
-        path = result.get("fields", {}).get("path.path", None)
-        if type(path) in (list, tuple, set) and len(path) > 0:
-            path = path[0]
+
+        # Typesense returns hits with 'document' field containing the actual data
+        document = hit.get("document", {})
+        path = document.get("path", None)
+
         if path:
             brain = get_brain_from_path(zcatalog, path)
             if not brain:
-                result = manager.get_record_by_path(path)
-                brain = TypesenseBrain(record=result, catalog=catalog)
-            if manager.highlight and result.get("highlight"):
+                # Create TypesenseBrain from document data
+                brain = TypesenseBrain(record=document, catalog=catalog)
+
+            # Handle highlighting if enabled
+            if manager.highlight and hit.get("highlight"):
                 fragments = []
                 fraglen = 0
-                for idx, i in enumerate(result["highlight"].get("SearchableText", [])):
+                for idx, i in enumerate(hit["highlight"].get("SearchableText", [])):
                     fraglen += len(i)
                     if idx > 0 and fraglen > manager.highlight_threshold:
                         break
                     fragments.append(i)
                 brain["Description"] = " ... ".join(fragments)
             return brain
-        # We should handle cases where there is no path in the ES response
         return None
 
     return factory
@@ -105,12 +112,12 @@ class TypesenseResult:
         self.query = qassembler(dquery)
 
         # results are stored in a dictionary, keyed
-        # but the start index of the bulk size for the
+        # by the start index of the bulk size for the
         # results it holds. This way we can skip around
         # for result data in a result object
-        result = manager._search(self.query, sort=self.sort, **query_params)["hits"]
+        result = manager._search(self.query, sort=self.sort)
         self.results = {0: result["hits"]}
-        self.count = result["total"]["value"]
+        self.count = result["found"]
         self.query_params = query_params
 
     def __len__(self):
@@ -154,7 +161,8 @@ class TypesenseResult:
             else:
                 result_index = (key % bulk_size) - (bulk_size - (count % last_key))
         if result_key not in self.results:
-            self.results[result_key] = self.manager._search(
-                self.query, sort=self.sort, start=start, **self.query_params
-            )["hits"]["hits"]
+            result = self.manager._search(
+                self.query, sort=self.sort, start=start
+            )
+            self.results[result_key] = result["hits"]
         return self.results[result_key][result_index]
