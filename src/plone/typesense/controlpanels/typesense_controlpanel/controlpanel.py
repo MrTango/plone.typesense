@@ -15,11 +15,11 @@ from z3c.form import button
 from zope.component import adapter
 from zope.component.hooks import getSite
 from zope.interface import Interface
-
+from plone.app.z3cform.widget import SingleCheckBoxBoolFieldWidget
 from plone import schema
 from plone.typesense import _
 from plone.typesense.interfaces import IPloneTypesenseLayer
-
+from plone.autoform import directives
 
 class ITypesenseControlpanel(Interface):
     enabled = schema.Bool(
@@ -145,6 +145,32 @@ class ITypesenseControlpanel(Interface):
         ),
         default=["Title", "Description", "SearchableText"],
         required=False,
+    )
+
+    directives.widget(highlight=SingleCheckBoxBoolFieldWidget)
+    highlight = schema.Bool(
+        title=_(
+            u'Highlight',
+        ),
+        description=_(
+            u'',
+        ),
+        required=False,
+        default=False,
+        readonly=False,
+    )
+
+    bulk_size = schema.Int(
+        title=_(
+            u'Bulk Size',
+        ),
+        description=_(
+            u'',
+        ),
+        required=False,
+        default=50,
+        # defaultFactory=get_default_bulk_size  ,
+        readonly=False,
     )
 
 

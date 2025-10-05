@@ -4,7 +4,11 @@ from typing import Tuple
 from dataclasses import dataclass
 from Products.CMFCore.interfaces import IIndexQueueProcessor
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
+from zope.interface import Interface
 
+class ITypesenseManager(Interface):
+    """
+    """
 
 class IPloneTypesenseLayer(IDefaultBrowserLayer):
     """Marker interface that defines a browser layer."""
