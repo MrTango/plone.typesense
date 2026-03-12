@@ -1,0 +1,36 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:monkey="http://namespaces.plone.org/monkey"
+    i18n_domain="plone.typesense"
+>
+
+  <!-- Monkey patches for CatalogTool to route searches to Typesense -->
+
+  <!-- Patch searchResults() method -->
+  <monkey:patch
+      original="searchResults"
+      replacement=".safeSearchResults"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Route searchResults to Typesense when active"
+      preserveOriginal="True"
+  />
+
+  <!-- Patch __call__() method (allows catalog(...) syntax) -->
+  <monkey:patch
+      original="__call__"
+      replacement=".safeSearchResults"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Route catalog() calls to Typesense when active"
+      preserveOriginal="True"
+  />
+
+  <!-- Patch unrestrictedSearchResults() method -->
+  <monkey:patch
+      original="unrestrictedSearchResults"
+      replacement=".unrestrictedSearchResults"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Route unrestrictedSearchResults to Typesense when active"
+      preserveOriginal="True"
+  />
+
+</configure>

@@ -19,14 +19,20 @@ def get_settings():
 
 
 def get_ts_only_indexes():
-    """
+    """Get the list of indexes that should only be queried via Typesense.
+
+    Returns a set of index names.
     """
     settings = get_settings()
     try:
         indexes = settings.ts_only_indexes
-        return set(indexes) if indexes else set()
+        # Use default if not configured
+        if not indexes:
+            indexes = ["Title", "Description", "SearchableText"]
+        return set(indexes)
     except (KeyError, AttributeError):
-        return ["Title", "Description", "SearchableText"]
+        # Fallback to defaults
+        return set(["Title", "Description", "SearchableText"])
 
 
 def get_brain_from_path(zcatalog: ZCatalog, path: str) -> AbstractCatalogBrain:

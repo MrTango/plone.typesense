@@ -10,6 +10,23 @@ class ITypesenseManager(Interface):
     """
     """
 
+
+class IQueryAssembler(Interface):
+    """Assembles Plone catalog queries into Typesense search parameters."""
+
+    def normalize(query):
+        """Normalize query parameters (extract sort_on, etc.).
+
+        Returns (normalized_query, sort_list)
+        """
+
+    def __call__(query):
+        """Build Typesense search parameters from Plone query dict.
+
+        Returns dict with 'q', 'query_by', 'filter_by', 'sort_by', etc.
+        """
+
+
 class IPloneTypesenseLayer(IDefaultBrowserLayer):
     """Marker interface that defines a browser layer."""
 

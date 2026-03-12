@@ -36,6 +36,43 @@ def _zdt(val):
     return val
 
 
+def _parse_value(value):
+    """Parse query value, converting string representations of lists/tuples into actual lists.
+
+    When query parameters come from HTTP requests or URLs, list values are often
+    passed as string representations like "['Document', 'News Item']".
+    This function detects and parses such strings back into Python lists.
+
+    Examples:
+        "['Document', 'News Item']" -> ['Document', 'News Item']
+        "('Document', 'News Item')" -> ['Document', 'News Item']
+        "Document" -> "Document" (unchanged)
+        ['Document', 'News Item'] -> ['Document', 'News Item'] (unchanged)
+
+    @param value: The value to parse
+    @return: Parsed value (list if string representation detected, otherwise unchanged)
+    """
+    if not isinstance(value, str):
+        return value
+
+    # Check if it looks like a list or tuple string representation
+    stripped = value.strip()
+    if (stripped.startswith('[') and stripped.endswith(']')) or \
+       (stripped.startswith('(') and stripped.endswith(')')):
+        try:
+            # Use ast.literal_eval for safe parsing (no code execution)
+            import ast
+            parsed = ast.literal_eval(stripped)
+            # literal_eval can return various types, make sure it's a sequence
+            if isinstance(parsed, (list, tuple)):
+                return list(parsed)  # Always return as list for consistency
+        except (ValueError, SyntaxError):
+            # If parsing fails, return original value
+            pass
+
+    return value
+
+
 def get_index(catalog, name):
     catalog = getattr(catalog, "_catalog", catalog)
     try:
@@ -101,17 +138,38 @@ class TKeywordIndex(BaseIndex):
         """Convert keyword query to Typesense filter.
 
         Examples:
-          portal_type='Document' -> 'portal_type:=Document'
-          portal_type=['Document', 'News Item'] -> 'portal_type:[Document, `News Item`]'
+          portal_type='Document' -> 'portal_type:=`Document`'
+          portal_type=['Document', 'News Item'] -> 'portal_type:[`Document`, `News Item`]'
+          portal_type={'query': ['Document', 'News Item'], 'operator': 'or'} -> 'portal_type:[`Document`, `News Item`]'
+
+        Handles string representations of lists from URL parameters:
+          portal_type="['Document', 'News Item']" -> 'portal_type:[`Document`, `News Item`]'
+
+        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
         """
+        log.info(f"TKeywordIndex.get_typesense_filter CALLED: name={name}, value={value}, type={type(value)}")
+
+        # Normalize query - extract 'query' from dict if present
+        value = self._normalize_query(value)
+        log.info(f"TKeywordIndex after _normalize_query: value={value}, type={type(value)}")
+
+        # Parse string representations of lists/tuples into actual lists
+        # This handles cases where query params come from URLs like "?portal_type=['Document', 'News Item']"
+        value = _parse_value(value)
+        log.info(f"TKeywordIndex after _parse_value: value={value}, type={type(value)}")
+
         if isinstance(value, (list, tuple, set)):
-            # Escape values with spaces using backticks
-            escaped_values = [f'`{v}`' if ' ' in str(v) else str(v) for v in value]
-            return f"{name}:[{', '.join(escaped_values)}]"
+            # Wrap ALL string values in backticks (Typesense filter syntax requirement)
+            escaped_values = [f'`{v}`' for v in value]
+            log.info(f"TKeywordIndex escaped_values list: {escaped_values}")
+            result = f"{name}:[{', '.join(escaped_values)}]"
+            log.info(f"TKeywordIndex RETURNING filter for list: {result}")
+            return result
         else:
-            # Single value - exact match
-            val = f'`{value}`' if ' ' in str(value) else str(value)
-            return f"{name}:={val}"
+            # Single value - exact match - wrap in backticks
+            result = f"{name}:=`{value}`"
+            log.info(f"TKeywordIndex RETURNING filter for single value: {result}")
+            return result
 
 
 class TFieldIndex(BaseIndex):
@@ -119,10 +177,16 @@ class TFieldIndex(BaseIndex):
         """Convert field query to Typesense filter.
 
         Examples:
-          Type='Document' -> 'Type:=Document'
+          Type='Document' -> 'Type:=`Document`'
+          Type={'query': 'Document'} -> 'Type:=`Document`'
+
+        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
         """
-        val = f'`{value}`' if ' ' in str(value) else str(value)
-        return f"{name}:={val}"
+        # Normalize query - extract 'query' from dict if present
+        value = self._normalize_query(value)
+
+        # Wrap in backticks (Typesense filter syntax requirement)
+        return f"{name}:=`{value}`"
 
 
 class TDateIndex(BaseIndex):
@@ -205,44 +269,184 @@ class TZCTextIndex(BaseIndex):
         return {"type": "text", "index": True, "store": False}
 
     def get_value(self, obj):
+        """Extract indexable text value from object.
+
+        For SearchableText, this method manually extracts text from Title, Description,
+        and body text fields (like 'text') to ensure complete indexing. This is necessary
+        because IIndexer adapters may return cached data that doesn't include body text.
+
+        For other text indexes, it uses the standard extraction via getattr or IIndexer.
+        """
         try:
             fields = self.index._indexed_attrs
         except Exception:  # NOQA W0703
             fields = [self.index._fieldname]
+
         all_texts = []
         for attr in fields:
-            text = getattr(obj, attr, None)
+            # For SearchableText, manually extract from object fields to ensure body text is included
+            if attr == 'SearchableText':
+                # Get the original object from wrapper if needed
+                original_obj = obj.object if hasattr(obj, 'object') else obj
+
+                # Build SearchableText from ID + Title + Description + body text
+                parts = []
+
+                # Get ID
+                if hasattr(original_obj, 'id'):
+                    parts.append(str(original_obj.id))
+
+                # Get Title
+                if hasattr(original_obj, 'Title'):
+                    title = original_obj.Title
+                    if safe_callable(title):
+                        title = title()
+                    if title:
+                        parts.append(str(title))
+
+                # Get Description
+                if hasattr(original_obj, 'Description'):
+                    desc = original_obj.Description
+                    if safe_callable(desc):
+                        desc = desc()
+                    if desc:
+                        parts.append(str(desc))
+
+                # Get body text from 'text' field (RichText for Documents)
+                if hasattr(original_obj, 'text') and original_obj.text:
+                    body = original_obj.text
+                    # Handle RichTextValue objects
+                    if hasattr(body, 'output'):
+                        body = body.output
+                    elif hasattr(body, 'raw'):
+                        body = body.raw
+                    # Strip HTML tags if present
+                    if isinstance(body, str) and ('<' in body or '>' in body):
+                        from html.parser import HTMLParser
+
+                        class HTMLStripper(HTMLParser):
+                            def __init__(self):
+                                super().__init__()
+                                self.text_parts = []
+
+                            def handle_data(self, data):
+                                self.text_parts.append(data)
+
+                            def get_data(self):
+                                return ' '.join(self.text_parts)
+
+                        try:
+                            stripper = HTMLStripper()
+                            stripper.feed(body)
+                            body = stripper.get_data()
+                        except Exception:  # NOQA W0703
+                            pass
+
+                    if body:
+                        parts.append(str(body))
+
+                text = ' '.join(parts) if parts else None
+            else:
+                # For other indexes, use standard extraction
+                text = getattr(obj, attr, None)
+
+                # If getattr returned None, try to find an IIndexer adapter
+                if text is None:
+                    from zope.component import queryMultiAdapter
+                    from plone.indexer.interfaces import IIndexer
+                    from plone import api
+
+                    catalog = api.portal.get_tool("portal_catalog")
+                    indexer = queryMultiAdapter((obj, catalog), IIndexer, name=attr)
+                    if indexer:
+                        text = indexer()
+
             if text is None:
                 continue
+
             if safe_callable(text):
                 text = text()
+
             if text is None:
                 continue
+
+            # Handle RichTextValue objects (from plone.app.textfield)
+            if hasattr(text, 'output'):
+                text = text.output
+            elif hasattr(text, 'raw'):
+                text = text.raw
+
+            # Strip HTML tags if present
+            if isinstance(text, str) and ('<' in text or '>' in text):
+                from html.parser import HTMLParser
+
+                class HTMLStripper(HTMLParser):
+                    def __init__(self):
+                        super().__init__()
+                        self.text_parts = []
+
+                    def handle_data(self, data):
+                        self.text_parts.append(data)
+
+                    def get_data(self):
+                        return ' '.join(self.text_parts)
+
+                try:
+                    stripper = HTMLStripper()
+                    stripper.feed(text)
+                    text = stripper.get_data()
+                except Exception:  # NOQA W0703
+                    # If HTML parsing fails, use text as-is
+                    pass
+
             if text:
-                if isinstance(
-                    text,
-                    (
-                        list,
-                        tuple,
-                    ),
-                ):
+                if isinstance(text, (list, tuple)):
                     all_texts.extend(text)
                 else:
-                    all_texts.append(text)
-        # Check that we're sending only strings
-        all_texts = filter(lambda text: isinstance(text, str), all_texts)
+                    all_texts.append(str(text))
+
+        # Check that we're sending only strings and filter empty strings
+        all_texts = [t for t in all_texts if isinstance(t, str) and t.strip()]
         if all_texts:
             return "\n".join(all_texts)
+        return None
+
+    def get_typesense_filter(self, name, value):
+        """Convert text field query to Typesense filter for exact matching.
+
+        Title and SearchableText should always use text search (get_typesense_query).
+        Other text fields can use exact match filters.
+
+        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
+        """
+        value = self._normalize_query(value)
+
+        # Title and SearchableText should always use text search, never exact match
+        # This is because they have infix: true in the schema and are optimized for search
+        if name in ('SearchableText', 'Title', 'Description'):
+            return None  # Will fall through to get_typesense_query()
+
+        # Other text fields: if no wildcards, use exact match
+        if value and '*' not in value:
+            # Wrap in backticks (Typesense filter syntax requirement)
+            return f"{name}:=`{value}`"
         return None
 
     def get_typesense_query(self, name, value):
         """Convert text search to Typesense query parameters.
 
         Returns dict with 'q' (search text) and 'query_by' (fields to search).
+        Used for full-text search.
         """
         value = self._normalize_query(value)
-        # Strip wildcards - Typesense handles fuzzy/infix matching via schema
-        clean_value = value.strip("*") if value else ""
+
+        # For SearchableText, use the value as-is (it's a search term, not a filter)
+        # For other fields with wildcards, strip them
+        if name == "SearchableText":
+            clean_value = value if value else ""
+        else:
+            # Strip wildcards - Typesense handles fuzzy/infix matching via schema
+            clean_value = value.strip("*") if value else ""
 
         if not clean_value:
             return None
@@ -252,7 +456,8 @@ class TZCTextIndex(BaseIndex):
 
         # For SearchableText, also search Title with higher weight
         if name == "SearchableText":
-            query_by_fields = ["Title", "SearchableText"]
+            # query_by_fields = ["Title", "SearchableText"]
+            query_by_fields = ["SearchableText"]
 
         return {
             'q': clean_value,
@@ -270,7 +475,11 @@ class TBooleanIndex(BaseIndex):
         Examples:
           is_folderish=True -> 'is_folderish:=true'
           is_folderish=False -> 'is_folderish:=false'
+          is_folderish={'query': True} -> 'is_folderish:=true'
         """
+        # Normalize query - extract 'query' from dict if present
+        value = self._normalize_query(value)
+
         bool_val = 'true' if value else 'false'
         return f"{name}:={bool_val}"
 
@@ -281,7 +490,11 @@ class TUUIDIndex(BaseIndex):
 
         Examples:
           UID='abc123' -> 'UID:=abc123'
+          UID={'query': 'abc123'} -> 'UID:=abc123'
         """
+        # Normalize query - extract 'query' from dict if present
+        value = self._normalize_query(value)
+
         return f"{name}:={value}"
 
 
@@ -322,17 +535,29 @@ class TExtendedPathIndex(BaseIndex):
         """Convert path query to Typesense filter.
 
         Examples:
-          path='/folder' -> 'path:=/folder*'
-          path={'query': '/folder', 'depth': 0} -> 'path:=/folder'
-          path={'query': '/folder', 'depth': 1} -> 'path:=/folder* && depth:<=2'
-          path={'query': ['/a', '/b']} -> 'path:=/a* || path:=/b*'
+          path='/folder' -> 'path:=`/folder*`'
+          path={'query': '/folder', 'depth': 0} -> 'path:=`/folder`'
+          path={'query': '/folder', 'depth': 1} -> 'path:=`/folder*`'
+          path={'query': ['/a', '/b']} -> 'path:=`/a*` || path:=`/b*`'
+
+        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
+        Note: depth filtering is ignored since Typesense doesn't have a depth field.
+              The path prefix matching provides sufficient filtering.
         """
         if isinstance(value, str):
-            paths = [value]
-            depth = -1
+            # Parse string representation of list if needed
+            parsed = _parse_value(value)
+            if isinstance(parsed, list):
+                paths = parsed
+                depth = -1
+            else:
+                paths = [parsed]
+                depth = -1
         else:
             depth = value.get("depth", -1)
             paths = value.get("query")
+            # Parse string representation if needed
+            paths = _parse_value(paths)
             if isinstance(paths, str):
                 paths = [paths]
 
@@ -342,19 +567,13 @@ class TExtendedPathIndex(BaseIndex):
         # Build filter for each path
         path_filters = []
         for path in paths:
-            spath = path.split("/")
-            path_depth = len(spath) - 1
-
             if depth == 0:
-                # Exact path match
-                path_filters.append(f"path:={path}")
-            elif depth == -1:
-                # All descendants (unlimited depth)
-                path_filters.append(f"path:={path}*")
+                # Exact path match - wrap in backticks
+                path_filters.append(f"path:=`{path}`")
             else:
-                # Limited depth
-                max_depth = path_depth + depth
-                path_filters.append(f"(path:={path}* && depth:<={max_depth})")
+                # All descendants (depth ignored for Typesense) - wrap in backticks
+                # Use wildcard to match all paths starting with this prefix
+                path_filters.append(f"path:=`{path}*`")
 
         # Combine multiple paths with OR
         if len(path_filters) > 1:

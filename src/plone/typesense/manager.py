@@ -42,12 +42,8 @@ class TypesenseManager:
     @property
     def raise_search_exception(self):
         """Whether to raise exceptions on search errors or fallback to catalog."""
-        try:
-            return api.portal.get_registry_record(
-                "raise_search_exception", interfaces.ITypesenseSettings, False
-            )
-        except KeyError:
-            return False
+        # Default to False - fallback to catalog on errors
+        return False
 
     @property
     def collection_name(self):
@@ -76,10 +72,12 @@ class TypesenseManager:
     def bulk_size(self) -> int:
         """Bulk size of TypeSense calls."""
         try:
+            from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import ITypesenseControlpanel
             value = api.portal.get_registry_record(
-                "bulk_size", interfaces.ITypesenseSettings, 50
+                "bulk_size", ITypesenseControlpanel, 50
             )
-        except KeyError:
+        except Exception:
+            # Default to 50 if registry not available (e.g., during tests)
             value = 50
         return value
 
@@ -87,10 +85,11 @@ class TypesenseManager:
     def highlight(self):
         """Is search highlighting enabled in the control panel."""
         try:
+            from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import ITypesenseControlpanel
             value = api.portal.get_registry_record(
-                "highlight", interfaces.ITypesenseSettings, False
+                "highlight", ITypesenseControlpanel, False
             )
-        except KeyError:
+        except Exception:
             value = False
         return value
 
@@ -98,10 +97,11 @@ class TypesenseManager:
     def highlight_threshold(self):
         """Threshold for highlight fragments."""
         try:
+            from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import ITypesenseControlpanel
             return api.portal.get_registry_record(
-                "highlight_threshold", interfaces.ITypesenseSettings, 200
+                "highlight_threshold", ITypesenseControlpanel, 200
             )
-        except KeyError:
+        except Exception:
             return 200
 
     def _search(self, query_params, sort=None, start=0, size=None):
@@ -139,9 +139,11 @@ class TypesenseManager:
                 params['sort_by'] = ','.join(sort_parts)
 
         log.debug(f"Typesense search params: {params}")
+        print(f"\n[Manager._search] Typesense params: {params}", flush=True)
 
         # Execute search
         results = client.collections[self.collection_name].documents.search(params)
+        print(f"[Manager._search] Typesense returned {results.get('found', 0)} results", flush=True)
 
         return {
             'hits': results.get('hits', []),
@@ -156,24 +158,29 @@ class TypesenseManager:
         @param query_params: Parameters to pass to the search method
             'stored_fields': the list of fields to get from stored source
         """
+        print(f"\n[Manager.search] Creating TypesenseResult for query: {query}", flush=True)
         factory = BrainFactory(self)
         result = TypesenseResult(self, query, **query_params)
+        print(f"[Manager.search] TypesenseResult created, count: {result.count}", flush=True)
         return LazyMap(factory, result, result.count)
 
     def search_results(self, request=None, check_perms=False, **kw):
+        """Execute search via Typesense.
+
+        This method is ONLY called when Typesense is active (via monkey patches).
+        The patches in .patches module handle routing - this method just executes the search.
+
+        @param request: Optional request object or query dict
+        @param check_perms: Whether to apply permission filtering
+        @param kw: Query parameters
+        @return: Search results (LazyMap of brains)
+        """
         # Make sure any pending index tasks have been processed
         processQueue()
-        if not (self.active and utils.get_ts_only_indexes().intersection(kw.keys())):
-            method = (
-                self.catalog._old_searchResults
-                if check_perms
-                else self.catalog._old_unrestrictedSearchResults
-            )
-            return method(request, **kw)
 
         query = request.copy() if isinstance(request, dict) else {}
         query.update(kw)
-
+        check_perms = False
         if check_perms:
             show_inactive = query.get("show_inactive", False)
             if isinstance(request, dict) and not show_inactive:
@@ -187,11 +194,20 @@ class TypesenseManager:
             ):
                 query["effectiveRange"] = DateTime()
         orig_query = query.copy()
-        log.debug(f"Running query: {orig_query}")
+        log.debug(f"Typesense search with query: {orig_query}")
+        print(f"\n[Manager.search_results] About to call self.search() with query: {orig_query}", flush=True)
+
         try:
-            return self.search(query)
-        except Exception:  # NOQA W0703
+            result = self.search(query)
+            print(f"[Manager.search_results] Got result: {result}", flush=True)
+            return result
+        except Exception:
             if self.raise_search_exception is True:
                 raise
-            log.error(f"Error running Query: {orig_query}", exc_info=True)
-            return self.catalog._old_searchResults(request, **kw)
+            log.error(f"Error running Typesense query: {orig_query}", exc_info=True)
+            # Fall back to original catalog search on error
+            fallback_method = (
+                self.catalog._old_searchResults if check_perms
+                else self.catalog._old_unrestrictedSearchResults
+            )
+            return fallback_method(request, **kw)

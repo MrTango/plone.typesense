@@ -47,10 +47,17 @@
 
   <include package=".controlpanels" />
 
+  <include package=".patches" />
 
   <include package=".subscribers" />
   <include package=".global_utilities" />
 
+  <adapter
+      for="zope.interface.Interface
+           plone.typesense.interfaces.ITypesenseManager"
+      provides="plone.typesense.interfaces.IQueryAssembler"
+      factory=".query.QueryAssembler"
+      />
 
   <utility
       factory=".queueprocessor.IndexProcessor"

@@ -99,9 +99,42 @@ class IndexProcessor:
         wrapped_object = self.wrap_object(obj)
         attributes = attributes if attributes else self.all_attributes
         catalog = self.catalog
+        ts_only_indexes = get_ts_only_indexes()
+
         for index_name in attributes:
             value = None
             index = get_index(catalog, index_name)
+
+            # If index not in catalog but is in ts_only_indexes, create MockIndex
+            if index is None and index_name in ts_only_indexes:
+                from plone.typesense.indexes import TZCTextIndex
+
+                # Create mock index with proper configuration
+                class MockIndex:
+                    def __init__(self, index_id):
+                        self.id = index_id
+                        self._fieldname = index_id
+
+                        # For SearchableText, specify all fields that should be indexed
+                        # Common Plone Document attributes that contain searchable text:
+                        # - Title (method)
+                        # - Description (method)
+                        # - text (RichText field - most common for Dexterity Documents)
+                        # - body (alternative field name for some content types)
+                        # - id (id of the object)
+                        if index_id == 'SearchableText':
+                            self._indexed_attrs = ['Title', 'Description', 'text', 'body', 'id']
+                        # For other indexes, don't set _indexed_attrs at all
+                        # This makes TZCTextIndex.get_value() fall back to using _fieldname
+
+                    def getIndexSourceNames(self):
+                        if hasattr(self, '_indexed_attrs'):
+                            return self._indexed_attrs
+                        return [self.id]
+
+                mock_index = MockIndex(index_name)
+                index = TZCTextIndex(catalog._catalog, mock_index)
+
             if index is not None:
                 try:
                     # value = get_index_value(wrapped_object, index)
@@ -131,7 +164,13 @@ class IndexProcessor:
             value = (
                 value.decode("utf-8", "ignore") if isinstance(value, bytes) else value
             )
-            index_data[index_name] = value
+
+            # Normalize value types for Typesense
+            value = self._normalize_value_for_typesense(index_name, value)
+
+            # Skip optional fields that are None (exclude from payload)
+            if value is not None:
+                index_data[index_name] = value
 
         # additional_providers = [
         #     adapter for adapter in getAdapters((obj,), IAdditionalIndexDataProvider)
@@ -141,6 +180,118 @@ class IndexProcessor:
         #         index_data.update(adapter(catalog, index_data))
         print(f"index_data:\n {index_data}")
         return index_data
+
+    def _normalize_value_for_typesense(self, field_name, value):
+        """Normalize field values to match Typesense schema types.
+
+        This ensures that the data types we send match what Typesense expects
+        based on the schema configuration.
+        """
+        # Get schema from connector
+        schema = self.ts_connector.get_ts_schema
+        if not schema or 'fields' not in schema:
+            return value
+
+        # Find field definition in schema
+        field_def = None
+        for field in schema['fields']:
+            if field.get('name') == field_name:
+                field_def = field
+                break
+
+        if not field_def:
+            # No explicit field definition, check if auto-index will handle it
+            # Auto-index fields (.*) will infer type from first value
+            #
+            # Known keyword fields that Typesense may have inferred as strings
+            # Convert lists to comma-separated strings to match the inferred type
+            if field_name in ('commentators', 'Contributors', 'Creators'):
+                # These are typically keyword indexes that return lists
+                # Convert to string to match Typesense's auto-inferred type
+                if value in (None, '', 'None', [], (), {}):
+                    return ""
+                if isinstance(value, (list, tuple, set)):
+                    # Join lists into comma-separated string
+                    return ', '.join(str(v) for v in value if v not in (None, '', 'None'))
+                return str(value) if value else ""
+
+            # Known integer fields that Typesense may have inferred as int32/int64
+            if field_name in ('total_comments', 'cmf_uid', 'getObjPositionInParent'):
+                # Ensure it's an integer
+                if value in (None, '', 'None', [], (), {}):
+                    return 0
+                if isinstance(value, (list, tuple)):
+                    value = value[0] if value else 0
+                try:
+                    return int(value) if value else 0
+                except (ValueError, TypeError):
+                    log.warning(f"Could not convert {field_name}={value} to int, using 0")
+                    return 0
+
+            return value
+
+        field_type = field_def.get('type', 'auto')
+        optional = field_def.get('optional', False)
+
+        # Handle null/empty values
+        if value in (None, '', 'None', [], (), {}):
+            if optional:
+                # Optional fields can be omitted entirely
+                return None
+            # Non-optional fields need a default value
+            if field_type.endswith('[]'):
+                return []
+            elif field_type in ('int32', 'int64', 'float'):
+                return 0
+            elif field_type == 'bool':
+                return False
+            else:
+                return ""
+
+        # Type conversions based on schema field type
+        if field_type == 'string':
+            # Single string - convert lists to single string
+            if isinstance(value, (list, tuple, set)):
+                # Join lists into a single string
+                value = ', '.join(str(v) for v in value if v)
+            return str(value) if value else ""
+
+        elif field_type == 'string[]':
+            # String array - ensure it's a list of strings
+            if not isinstance(value, (list, tuple, set)):
+                # Convert single value to list
+                value = [value] if value else []
+            # Convert all elements to strings
+            return [str(v) for v in value if v not in (None, '', 'None')]
+
+        elif field_type in ('int32', 'int64'):
+            # Integer - convert to int
+            if isinstance(value, (list, tuple)):
+                value = value[0] if value else 0
+            try:
+                return int(value) if value else 0
+            except (ValueError, TypeError):
+                log.warning(f"Could not convert {field_name}={value} to int, using 0")
+                return 0
+
+        elif field_type == 'float':
+            # Float - convert to float
+            if isinstance(value, (list, tuple)):
+                value = value[0] if value else 0.0
+            try:
+                return float(value) if value else 0.0
+            except (ValueError, TypeError):
+                log.warning(f"Could not convert {field_name}={value} to float, using 0.0")
+                return 0.0
+
+        elif field_type == 'bool':
+            # Boolean - convert to bool
+            if isinstance(value, (list, tuple)):
+                value = value[0] if value else False
+            return bool(value)
+
+        # For auto or unknown types, return as-is
+        return value
 
     def _clean_up(self):
         self._ts_attributes = None
@@ -194,7 +345,13 @@ class IndexProcessor:
             attributes = self.all_attributes
             is_reindex = False
         else:
-            attributes = {att for att in attributes} if attributes else set()
+            if attributes:
+                # Convert to set and add ts_only_indexes
+                # This ensures fields like Title are indexed even if removed from catalog
+                attributes = {att for att in attributes}
+                attributes = attributes.union(get_ts_only_indexes())
+            else:
+                attributes = set()
             is_reindex = attributes and attributes != self.all_attributes
         data = self.get_data(uuid, attributes)
         blob_data = self.get_blob_data(uuid, obj)
@@ -257,8 +414,10 @@ class IndexProcessor:
                     ts_data[action] = []
                 ts_data[action].append(payload)
             print(f"actions: {ts_data.keys()}")
-            self.ts_index(ts_data["index"])
-            self.ts_update(ts_data["update"])
+            if "index" in ts_data:
+                self.ts_index(ts_data["index"])
+            if "update" in ts_data:
+                self.ts_update(ts_data["update"])
         self._clean_up()
 
     def _prepare_for_typesense(self, uuid, payload):
