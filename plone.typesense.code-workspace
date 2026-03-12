@@ -1,0 +1,8 @@
+{"folders":[
+		{
+			"path": "."
+		},
+		{
+			"path": "../../plonecore/buildout.coredev/src/collective.elasticsearch"
+		}
+	],"settings":{}}
