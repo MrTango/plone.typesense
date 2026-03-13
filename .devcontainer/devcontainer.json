@@ -41,6 +41,8 @@
 		"source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
 		"source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume",
 		"source=${localEnv:HOME}/.claude/skills,target=/home/node/.claude/skills,type=bind,readonly",
+		"source=opencode-bin-${devcontainerId},target=/home/node/.opencode,type=volume",
+		"source=opencode-config-${devcontainerId},target=/home/node/.config/opencode,type=volume"
 	],
 	"containerEnv": {
 		"CLAUDE_CONFIG_DIR": "/home/node/.claude",
@@ -55,7 +57,7 @@
     },
 	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
 	"workspaceFolder": "/workspace",
-	"postCreateCommand": "/usr/local/bin/setup-claude.sh",
+	"postCreateCommand": "/usr/local/bin/setup-ai-tools.sh",
 	"postStartCommand": "bash /workspace/.devcontainer/post-start.sh",
 	"waitFor": "postStartCommand"
 }

@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Install Claude Code with retry logic ---
 MAX_RETRIES=3
 RETRY_DELAY=5
+
+# ========================================
+# Section 1: Claude Code Installation
+# ========================================
 
 for attempt in $(seq 1 $MAX_RETRIES); do
     echo "Installing Claude Code (attempt $attempt/$MAX_RETRIES)..."
@@ -14,7 +17,7 @@ for attempt in $(seq 1 $MAX_RETRIES); do
     if [ "$attempt" -eq "$MAX_RETRIES" ]; then
         echo "WARNING: Claude Code installation failed after $MAX_RETRIES attempts."
         echo "It will be retried on next container start."
-        exit 0
+        break
     fi
     echo "Retrying in ${RETRY_DELAY}s..."
     sleep $RETRY_DELAY
@@ -35,10 +38,30 @@ if command -v claude &>/dev/null; then
     pnpm install -g chrome-devtools-mcp@latest || echo "WARNING: Failed to install chrome-devtools-mcp"
 
     echo "Configuring Chrome DevTools MCP server..."
-    claude mcp add chrome-devtools -- chrome-devtools-mcp --headless --isolated --chrome-arg=--no-sandbox --chrome-arg=--disable-setuid-sandbox --chrome-arg=--disable-dev-shm-usage --chrome-arg=--disable-gpu || echo "WARNING: Failed to configure chrome-devtools MCP"
+    claude mcp add chrome-devtools -- chrome-devtools-mcp --headless --isolated --executable-path /usr/bin/chromium --no-usage-statistics --chrome-arg=--no-sandbox --chrome-arg=--disable-setuid-sandbox --chrome-arg=--disable-dev-shm-usage --chrome-arg=--disable-gpu || echo "WARNING: Failed to configure chrome-devtools MCP"
 
     echo "Enabling remote control for all sessions..."
     claude config set -g preferRemoteControl true || echo "WARNING: Failed to set remote control config"
 fi
 
 echo "Claude Code setup complete."
+
+# ========================================
+# Section 2: OpenCode Installation
+# ========================================
+for attempt in $(seq 1 $MAX_RETRIES); do
+    echo "Installing OpenCode (attempt $attempt/$MAX_RETRIES)..."
+    if curl -fsSL https://opencode.ai/install | bash; then
+        echo "OpenCode installed successfully."
+        break
+    fi
+    if [ "$attempt" -eq "$MAX_RETRIES" ]; then
+        echo "WARNING: OpenCode installation failed after $MAX_RETRIES attempts."
+        echo "It will be retried on next container start."
+        break
+    fi
+    echo "Retrying in ${RETRY_DELAY}s..."
+    sleep $RETRY_DELAY
+done
+
+echo "AI tools setup complete."

@@ -44,8 +44,8 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV DEVCONTAINER=true
 
 # Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude && \
-  chown -R node:node /workspace /home/node/.claude
+RUN mkdir -p /workspace /home/node/.claude /home/node/.opencode /home/node/.config/opencode && \
+  chown -R node:node /workspace /home/node/.claude /home/node/.opencode /home/node/.config/opencode
 
 WORKDIR /workspace
 
@@ -63,7 +63,9 @@ USER node
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
-ENV PATH=/home/node/.claude/bin:/home/node/.local/bin:$PATH:/usr/local/share/npm-global/bin
+ENV PNPM_HOME=/home/node/.local/share/pnpm
+RUN mkdir -p $PNPM_HOME
+ENV PATH=/home/node/.claude/bin:/home/node/.opencode/bin:/home/node/.local/bin:$PNPM_HOME:$PATH:/usr/local/share/npm-global/bin
 
 # Install uv (Python package manager)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -90,9 +92,9 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 
 # Copy and set up firewall and Claude setup scripts
 COPY init-firewall.sh /usr/local/bin/
-COPY setup-claude.sh /usr/local/bin/
+COPY setup-ai-tools.sh /usr/local/bin/
 USER root
-RUN chmod 755 /usr/local/bin/init-firewall.sh /usr/local/bin/setup-claude.sh && \
+RUN chmod 755 /usr/local/bin/init-firewall.sh /usr/local/bin/setup-ai-tools.sh && \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
   chmod 0440 /etc/sudoers.d/node-firewall
 

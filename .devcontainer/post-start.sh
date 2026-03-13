@@ -9,6 +9,12 @@ if ! command -v claude &>/dev/null; then
     curl -fsSL https://claude.ai/install.sh | bash || echo "WARNING: Claude Code installation failed"
 fi
 
+# 0b. Ensure OpenCode is installed (fallback if postCreateCommand failed)
+if ! command -v opencode &>/dev/null; then
+    echo "OpenCode not found, installing..."
+    curl -fsSL https://opencode.ai/install | bash || echo "WARNING: OpenCode installation failed"
+fi
+
 # 1. Install pnpm dependencies (if package.json exists)
 if [ -f package.json ]; then
     echo "Installing pnpm dependencies..."
