@@ -1,0 +1,60 @@
+sync:
+#  defaults:
+#    mode: "two-way-safe"
+#    ignore:
+#      vcs: true
+#      paths:
+#        - "**/__pycache__/**"
+#        - "**/*.pyc"
+#        - "**/*.swo"
+#        - "**/*.swp"
+#        - "**/.DS_Store/**"
+#        - "**/node_modules**/"
+#        - "**/venv*/**"
+#        - "**/.venv/**"
+#        - "**/eggs/**"
+#        - "**/.egg-info/**"
+#        - "**/.tox/**"
+#        - "**/.nox/**"
+#        - "**/.cache/**"
+#        - "**/.coverage/**"
+#        - "**/.pytest_cache/**"
+#        - "**/dist/**"
+#        - "**/develop-eggs/**"
+#        - "**/.installed.cfg"
+#        - "**/parts/**"
+#        - "**/build/**"
+#
+  develop-plone-typesense:
+    alpha: "/home/maik/develop/src/plone.typesense"
+    beta: "maik@atomman.lan:~/develop/src/plone.typesense"
+    ignore:
+      paths:
+        - "**/typesense-data/**"
+
+#sync:
+#  defaults:
+#    ignore:
+#      vcs: true
+#      paths:
+#        - "**/node_modules**/"
+#        - "**/venv*/**"
+#        - "**/.venv/**"
+#        - "**/__pycache__/**"
+#        - "**/*.pyc"
+#        - "**/*.swo"
+#        - "**/*.swp"
+#        - "**/eggs/**"
+#        - "**/.egg-info/**"
+#        - "**/.tox/**"
+#        - "**/.nox/**"
+#        - "**/.cache/**"
+#        - "**/.coverage/**"
+#        - "**/.pytest_cache/**"
+#        - "**/dist/**"
+#        - "**/develop-eggs/**"
+#        - "**/.installed.cfg"
+#        - "**/parts/**"
+#        - "**/build/**"
+#        - "**/.DS_Store/**"
+#        - "**/typesense-data/**"
