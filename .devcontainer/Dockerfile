@@ -55,21 +55,21 @@ RUN ARCH=$(dpkg --print-architecture) && \
   sudo dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
 
+# Enable pnpm via corepack (must run as root)
+RUN corepack enable pnpm
+
 # Set up non-root user
 USER node
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
-ENV PATH=$HOME/.claude/bin:$HOME/.local/bin:$PATH:/usr/local/share/npm-global/bin
+ENV PATH=/home/node/.claude/bin:/home/node/.local/bin:$PATH:/usr/local/share/npm-global/bin
 
 # Install uv (Python package manager)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create Python venv
 RUN uv venv /home/node/.venv
-
-# Enable pnpm via corepack
-RUN corepack enable pnpm
 
 # Set the default shell to zsh rather than sh
 ENV SHELL=/bin/zsh
@@ -92,7 +92,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 COPY init-firewall.sh /usr/local/bin/
 COPY setup-claude.sh /usr/local/bin/
 USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/setup-claude.sh && \
+RUN chmod 755 /usr/local/bin/init-firewall.sh /usr/local/bin/setup-claude.sh && \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
   chmod 0440 /etc/sudoers.d/node-firewall
 

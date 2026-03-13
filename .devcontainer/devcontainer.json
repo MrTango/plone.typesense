@@ -8,7 +8,7 @@
 			"ZSH_IN_DOCKER_VERSION": "1.2.0"
 		}
 	},
-	"runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+	"runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW", "--add-host=host.docker.internal:host-gateway"],
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -41,14 +41,14 @@
 		"source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
 		"source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume",
 		"source=${localEnv:HOME}/.claude/skills,target=/home/node/.claude/skills,type=bind,readonly",
-		"source=${localEnv:HOME}/develop/plonecore/buildout.coredev/src/collective.elasticsearch,target=/reference/collective.elasticsearch,type=bind,readonly"
 	],
 	"containerEnv": {
 		"CLAUDE_CONFIG_DIR": "/home/node/.claude",
 		"POWERLEVEL9K_DISABLE_GITSTATUS": "true",
 		"CHROME_PATH": "/usr/bin/chromium",
 		"PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium",
-        "UV_PROJECT_ENVIRONMENT": "/home/node/.venv"
+        "UV_PROJECT_ENVIRONMENT": "/home/node/.venv",
+		"QDRANT_URL": "http://host.docker.internal:6333"
 	},
     "remoteEnv": {
         "PATH": "${containerEnv:PATH}:/home/node/.venv/bin"
