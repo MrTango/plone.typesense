@@ -1,0 +1,61 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:metal="http://xml.zope.org/namespaces/metal"
+      xmlns:tal="http://xml.zope.org/namespaces/tal"
+      xmlns:i18n="http://xml.zope.org/namespaces/i18n"
+      i18n:domain="plone.typesense"
+      metal:use-macro="context/main_template/macros/master">
+<body>
+
+  <metal:custom_title fill-slot="content-title">
+    <h1 i18n:translate="">Typesense Synchronization</h1>
+  </metal:custom_title>
+
+  <metal:content-core fill-slot="content-core">
+  <metal:block define-macro="content-core">
+
+    <tal:results tal:condition="view/sync_results|nothing">
+      <div class="portalMessage informationMessage"
+           tal:define="results view/sync_results">
+        <strong i18n:translate="">Synchronization complete</strong>
+        <table class="listing">
+          <tr>
+            <th i18n:translate="">Catalog documents</th>
+            <td tal:content="results/catalog_count">0</td>
+          </tr>
+          <tr>
+            <th i18n:translate="">Typesense documents</th>
+            <td tal:content="results/typesense_count">0</td>
+          </tr>
+          <tr>
+            <th i18n:translate="">Missing (indexed)</th>
+            <td>
+              <span tal:content="results/missing">0</span>
+              (<span tal:content="results/indexed">0</span> indexed)
+            </td>
+          </tr>
+          <tr>
+            <th i18n:translate="">Orphans (deleted)</th>
+            <td>
+              <span tal:content="results/orphans">0</span>
+              (<span tal:content="results/deleted">0</span> deleted)
+            </td>
+          </tr>
+        </table>
+      </div>
+    </tal:results>
+
+    <form method="POST"
+          tal:attributes="action string:${context/absolute_url}/@@typesense-sync">
+      <input type="hidden"
+             name="_authenticator"
+             tal:attributes="value context/@@authenticator/token" />
+      <input type="submit"
+             class="context"
+             value="Synchronize"
+             i18n:attributes="value" />
+    </form>
+
+  </metal:block>
+  </metal:content-core>
+</body>
+</html>
