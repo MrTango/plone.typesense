@@ -41,6 +41,25 @@
       name="plone.typesense-hiddenprofiles"
       />
 
+  <!-- Upgrade steps -->
+  <genericsetup:upgradeStep
+      title="Migrate from legacy versioning (1000) to version 1"
+      description="Reset profile version from legacy 1000 to proper version 1."
+      source="1000"
+      destination="1"
+      handler=".upgrades.reload_profile"
+      profile="plone.typesense:default"
+      />
+
+  <genericsetup:upgradeStep
+      title="Upgrade to version 2"
+      description="Re-import registry to pick up control panel changes."
+      source="1"
+      destination="2"
+      handler=".upgrades.upgrade_to_2"
+      profile="plone.typesense:default"
+      />
+
   <!-- -*- extra stuff goes here -*- -->
 
   <include package=".views" />
