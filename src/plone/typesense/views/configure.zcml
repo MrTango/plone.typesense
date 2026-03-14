@@ -11,7 +11,7 @@
     for="*"
     class=".typesense_reindex_collection.TypesenseReindexCollection"
     template="typesense_reindex_collection.pt"
-    permission="zope2.View"
+    permission="cmf.ManagePortal"
     layer="plone.typesense.interfaces.IPloneTypesenseLayer"
     />
 

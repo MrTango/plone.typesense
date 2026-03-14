@@ -7,27 +7,22 @@
 <body>
 
   <metal:custom_title fill-slot="content-title">
-    <h1 tal:replace="structure context/@@title" />
-
-    <!-- @@title view template: -->
-    <!--
-    <h1 tal:define="title context/Title" tal:condition="title" tal:content="title">
-      Title or id
-    </h1>
-    -->
-
+    <h1>Typesense Reindex Collection</h1>
   </metal:custom_title>
-
-  <metal:custom_description fill-slot="content-description">
-    <p tal:replace="structure context/@@description" />
-  </metal:custom_description>
 
   <metal:content-core fill-slot="content-core">
   <metal:block define-macro="content-core">
 
-    <h2>Main content</h2>
-    <!--<div tal:replace="view/my_custom_view_method" />-->
-    <!--<div tal:replace="context/my_custom_field" />-->
+    <p>This will clear the current Typesense collection and reindex all
+       cataloged content. This operation may take a while on large sites.</p>
+
+    <form method="POST" action="">
+      <input type="hidden" name="_authenticator"
+             tal:attributes="value context/@@authenticator/token" />
+      <input type="submit" class="btn btn-warning"
+             value="Reindex All Content"
+             i18n:attributes="value" />
+    </form>
 
   </metal:block>
   </metal:content-core>

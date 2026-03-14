@@ -2,12 +2,29 @@
     xmlns="http://namespaces.zope.org/zope"
     i18n_domain="plone.typesense">
 
- <!-- -*- extra stuff goes here -*- -->
+  <subscriber for="plone.dexterity.interfaces.IDexterityContent
+                   zope.lifecycleevent.interfaces.IObjectAddedEvent"
+              handler=".index_in_typesense.object_added"
+              />
 
   <subscriber for="plone.dexterity.interfaces.IDexterityContent
                    zope.lifecycleevent.interfaces.IObjectModifiedEvent"
-              handler=".index_in_typesense.handler"
+              handler=".index_in_typesense.object_modified"
               />
 
+  <subscriber for="plone.dexterity.interfaces.IDexterityContent
+                   zope.lifecycleevent.interfaces.IObjectRemovedEvent"
+              handler=".index_in_typesense.object_removed"
+              />
+
+  <subscriber for="plone.dexterity.interfaces.IDexterityContent
+                   zope.lifecycleevent.interfaces.IObjectMovedEvent"
+              handler=".index_in_typesense.object_moved"
+              />
+
+  <subscriber for="plone.dexterity.interfaces.IDexterityContent
+                   Products.CMFCore.interfaces.IActionSucceededEvent"
+              handler=".index_in_typesense.object_workflow_changed"
+              />
 
 </configure>

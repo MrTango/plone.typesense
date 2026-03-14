@@ -31,18 +31,20 @@ All 16 tasks implemented, 20 new tests added and passing, 28 existing tests stil
 
 ## Phase 1: Catalog Lifecycle — "Keep Typesense in sync"
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
-| # | Task | Status | Files |
-|---|------|--------|-------|
-| 1.1 | Event subscribers for content lifecycle (create/modify/delete/move/copy/workflow) | TODO | `subscribers/` |
-| 1.2 | `IReindexActive` marker interface | TODO | `interfaces.py` |
-| 1.3 | Patch `uncatalog_object` — queue TS delete on object removal | TODO | `patches/__init__.py` |
-| 1.4 | Patch `manage_catalogRebuild` — clear TS + rebuild | TODO | `patches/__init__.py` |
-| 1.5 | Patch `manage_catalogClear` — clear TS collection | TODO | `patches/__init__.py` |
-| 1.6 | `IAdditionalIndexDataProvider` interface + adapter lookup | TODO | `interfaces.py`, `queueprocessor.py` |
-| 1.7 | Rewrite reindex view with CSRF protection + progress | TODO | `views/typesense_reindex_collection.py` |
-| 1.8 | Tests for patches, subscriber, reindex | TODO | `tests/` |
+All 8 tasks implemented, 45 new tests added and passing.
+
+| # | Task | Status | Files Changed |
+|---|------|--------|---------------|
+| 1.1 | Event subscribers for content lifecycle (create/modify/delete/move/copy/workflow) | DONE | `subscribers/index_in_typesense.py`, `subscribers/configure.zcml` |
+| 1.2 | `IReindexActive` marker interface | DONE | `interfaces.py` |
+| 1.3 | Patch `uncatalog_object` — queue TS delete on object removal | DONE | `patches/__init__.py`, `patches/configure.zcml` |
+| 1.4 | Patch `manage_catalogRebuild` — clear TS + rebuild | DONE | `patches/__init__.py`, `patches/configure.zcml` |
+| 1.5 | Patch `manage_catalogClear` — clear TS collection | DONE | `patches/__init__.py`, `patches/configure.zcml` |
+| 1.6 | `IAdditionalIndexDataProvider` interface + adapter lookup | DONE | `interfaces.py`, `queueprocessor.py` |
+| 1.7 | Rewrite reindex view with CSRF protection + progress | DONE | `views/typesense_reindex_collection.py`, `views/configure.zcml`, `views/typesense_reindex_collection.pt` |
+| 1.8 | Tests for patches, subscriber, reindex | DONE | `tests/test_catalog_lifecycle.py` (new, 45 tests) |
 
 ---
 

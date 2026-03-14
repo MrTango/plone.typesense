@@ -249,26 +249,28 @@ class TestBrainHighlighting(unittest.TestCase):
 class TestReindexView(unittest.TestCase):
     """Test reindex view fixes."""
 
-    def test_no_self_index_call(self):
-        """Verify the view doesn't call self.index()."""
+    def test_uses_processor_not_direct_connector(self):
+        """Verify the view uses IndexProcessor for proper data handling."""
         import inspect
         from plone.typesense.views.typesense_reindex_collection import (
             TypesenseReindexCollection,
         )
 
         source = inspect.getsource(TypesenseReindexCollection.__call__)
-        self.assertNotIn("self.index()", source)
+        self.assertIn("ITypesenseSearchIndexQueueProcessor", source)
+        self.assertIn("processor.index", source)
+        self.assertIn("processor.commit", source)
 
-    def test_flushes_remaining(self):
-        """Verify remaining objects are flushed after ZopeFindAndApply."""
+    def test_has_csrf_and_post_check(self):
+        """Verify the view has CSRF protection and POST check."""
         import inspect
         from plone.typesense.views.typesense_reindex_collection import (
             TypesenseReindexCollection,
         )
 
         source = inspect.getsource(TypesenseReindexCollection.__call__)
-        # Should have a flush after the loop
-        self.assertIn("if self.objects:", source)
+        self.assertIn("CheckAuthenticator", source)
+        self.assertIn('"POST"', source)
 
 
 if __name__ == "__main__":

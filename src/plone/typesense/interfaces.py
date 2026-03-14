@@ -46,6 +46,26 @@ class ITypesenseSearchIndexQueueProcessor(IIndexQueueProcessor):
     """Index queue processor for Typesense."""
 
 
+class IReindexActive(Interface):
+    """Marker interface applied to the request during bulk reindex.
+
+    When this marker is active, the IndexProcessor knows a full rebuild
+    is in progress and indexes all attributes for every object.
+    """
+
+
+class IAdditionalIndexDataProvider(Interface):
+    """Adapter interface for injecting extra data into the Typesense document.
+
+    Register named adapters for (content_object,) that provide this interface.
+    Each adapter's __call__ receives (catalog, index_data) and returns the
+    updated index_data dict.
+    """
+
+    def __call__(catalog, index_data):
+        """Return updated index_data dict with additional fields."""
+
+
 class IMappingAdapter(Interface):
     """Adapter that generates a Typesense collection schema from a Plone catalog.
 

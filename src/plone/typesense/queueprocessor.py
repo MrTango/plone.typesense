@@ -2,7 +2,7 @@ from plone.app.uuid.utils import uuidToObject
 from plone.dexterity.utils import iterSchemata
 from plone.indexer.interfaces import IIndexableObject, IIndexer
 from plone.namedfile.interfaces import INamedBlobFileField
-from zope.component import getUtility, queryMultiAdapter
+from zope.component import getAdapters, getUtility, queryMultiAdapter
 from zope.interface import implementer
 from zope.schema import getFields
 
@@ -11,6 +11,7 @@ from plone.typesense import log
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
 from plone.typesense.indexes import get_index
 from plone.typesense.interfaces import (
+    IAdditionalIndexDataProvider,
     IndexingActions,
     ITypesenseSearchIndexQueueProcessor,
 )
@@ -154,12 +155,15 @@ class IndexProcessor:
             if value is not None:
                 index_data[index_name] = value
 
-        # additional_providers = [
-        #     adapter for adapter in getAdapters((obj,), IAdditionalIndexDataProvider)
-        # ]
-        # if additional_providers:
-        #     for _, adapter in additional_providers:
-        #         index_data.update(adapter(catalog, index_data))
+        additional_providers = getAdapters((obj,), IAdditionalIndexDataProvider)
+        for name, adapter in additional_providers:
+            try:
+                index_data = adapter(catalog, index_data)
+            except Exception:
+                log.error(
+                    f"Error in IAdditionalIndexDataProvider adapter '{name}'",
+                    exc_info=True,
+                )
         log.debug(f"index_data: {index_data}")
         return index_data
 
@@ -306,9 +310,13 @@ class IndexProcessor:
     @property
     def rebuild(self):
         if not self.active:
-            return
-        return False
-        # return IReindexActive.providedBy(getRequest())
+            return False
+        from zope.globalrequest import getRequest
+        from plone.typesense.interfaces import IReindexActive
+        request = getRequest()
+        if request is None:
+            return False
+        return IReindexActive.providedBy(request)
 
     def _uuid_path(self, obj):
         uuid = api.content.get_uuid(obj) if obj.portal_type != "Plone Site" else "/"

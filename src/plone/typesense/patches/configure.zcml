@@ -33,4 +33,31 @@
       preserveOriginal="True"
   />
 
+  <!-- Patch uncatalog_object() to queue Typesense deletes -->
+  <monkey:patch
+      original="uncatalog_object"
+      replacement=".uncatalog_object"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Queue Typesense delete on catalog object removal"
+      preserveOriginal="True"
+  />
+
+  <!-- Patch manage_catalogRebuild() to clear and rebuild Typesense -->
+  <monkey:patch
+      original="manage_catalogRebuild"
+      replacement=".manage_catalogRebuild"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Clear Typesense and set IReindexActive during catalog rebuild"
+      preserveOriginal="True"
+  />
+
+  <!-- Patch manage_catalogClear() to clear Typesense collection -->
+  <monkey:patch
+      original="manage_catalogClear"
+      replacement=".manage_catalogClear"
+      class="Products.CMFPlone.CatalogTool.CatalogTool"
+      description="Clear Typesense collection when catalog is cleared"
+      preserveOriginal="True"
+  />
+
 </configure>
