@@ -6,9 +6,19 @@ from Products.CMFCore.interfaces import IIndexQueueProcessor
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
 from zope.interface import Interface
 
+
 class ITypesenseManager(Interface):
-    """
-    """
+    """Marker interface for the Typesense search manager."""
+
+
+# Alias used by manager.py for registry lookups.
+# The actual schema is ITypesenseControlpanel in the controlpanels package.
+try:
+    from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import (
+        ITypesenseControlpanel as ITypesenseSettings,
+    )
+except ImportError:
+    ITypesenseSettings = Interface
 
 class IPloneTypesenseLayer(IDefaultBrowserLayer):
     """Marker interface that defines a browser layer."""
