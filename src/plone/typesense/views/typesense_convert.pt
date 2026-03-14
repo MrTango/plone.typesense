@@ -1,0 +1,56 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:metal="http://xml.zope.org/namespaces/metal"
+      xmlns:tal="http://xml.zope.org/namespaces/tal"
+      xmlns:i18n="http://xml.zope.org/namespaces/i18n"
+      i18n:domain="plone.typesense"
+      metal:use-macro="context/main_template/macros/master">
+<body>
+
+  <metal:custom_title fill-slot="content-title">
+    <h1 i18n:translate="">Convert Catalog to Typesense</h1>
+  </metal:custom_title>
+
+  <metal:content-core fill-slot="content-core">
+  <metal:block define-macro="content-core">
+
+    <tal:results tal:condition="view/convert_results|nothing">
+      <div class="portalMessage informationMessage"
+           tal:define="results view/convert_results">
+        <strong i18n:translate="">Conversion complete</strong>
+        <table class="listing">
+          <tr>
+            <th i18n:translate="">Collection</th>
+            <td tal:content="results/collection_name">content</td>
+          </tr>
+          <tr>
+            <th i18n:translate="">Documents indexed</th>
+            <td tal:content="results/indexed">0</td>
+          </tr>
+        </table>
+      </div>
+    </tal:results>
+
+    <div class="portalMessage warningMessage">
+      <strong i18n:translate="">Warning</strong>
+      <span i18n:translate="">
+        This will clear the existing Typesense collection and rebuild it
+        from the Plone catalog. This operation may take a long time for
+        large sites.
+      </span>
+    </div>
+
+    <form method="POST"
+          tal:attributes="action string:${context/absolute_url}/@@typesense-convert">
+      <input type="hidden"
+             name="_authenticator"
+             tal:attributes="value context/@@authenticator/token" />
+      <input type="submit"
+             class="context"
+             value="Convert Catalog"
+             i18n:attributes="value" />
+    </form>
+
+  </metal:block>
+  </metal:content-core>
+</body>
+</html>
