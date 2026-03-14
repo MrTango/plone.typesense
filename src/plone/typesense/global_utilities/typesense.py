@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 
 import typesense
@@ -47,12 +48,19 @@ class TypesenseConnector:
     @property
     def get_api_key(self):
         try:
-            return api.portal.get_registry_record(
+            key = api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.api_key"
             )
+            if key:
+                return key
         except api.exc.InvalidParameterError as e:
             log.warn(f"could not load Typesense API key from registry: {e}")
-            return
+        # Fall back to environment variable
+        env_key = os.environ.get("TYPESENSE_API_KEY")
+        if env_key:
+            log.info("Using Typesense API key from TYPESENSE_API_KEY environment variable")
+            return env_key
+        return None
 
     @property
     def get_timeout(self):
@@ -84,6 +92,74 @@ class TypesenseConnector:
             "plone.typesense.typesense_controlpanel.ts_schema"
         )
 
+    @property
+    def get_additional_nodes(self):
+        try:
+            return api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.additional_nodes"
+            )
+        except api.exc.InvalidParameterError:
+            return ""
+
+    @property
+    def get_num_retries(self):
+        try:
+            return api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.num_retries"
+            )
+        except api.exc.InvalidParameterError:
+            return 3
+
+    @property
+    def get_retry_interval_seconds(self):
+        try:
+            return api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.retry_interval_seconds"
+            )
+        except api.exc.InvalidParameterError:
+            return 1.0
+
+    @property
+    def get_healthcheck_interval_seconds(self):
+        try:
+            return api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.healthcheck_interval_seconds"
+            )
+        except api.exc.InvalidParameterError:
+            return 60
+
+    def _parse_additional_nodes(self):
+        """Parse additional_nodes text into a list of node dicts.
+
+        Each line should be in the format: host:port:protocol
+        Lines that don't match this format are skipped with a warning.
+        """
+        raw = self.get_additional_nodes
+        if not raw:
+            return []
+        nodes = []
+        for line in raw.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":")
+            if len(parts) != 3:
+                log.warn(
+                    f"Skipping invalid additional node definition: '{line}'. "
+                    f"Expected format: host:port:protocol"
+                )
+                continue
+            host, port_str, protocol = parts
+            try:
+                port = int(port_str)
+            except ValueError:
+                log.warn(
+                    f"Skipping additional node with invalid port: '{line}'"
+                )
+                continue
+            nodes.append({"host": host, "port": port, "protocol": protocol})
+        return nodes
+
     def get_client(self):
         """ """
         client = getattr(self.data, "client", None)
@@ -96,19 +172,26 @@ class TypesenseConnector:
         ts_host = self.get_host
         ts_port = self.get_port
         ts_protocol = self.get_protocol
-        self.data.client = typesense.Client(
+
+        # Build nodes list: primary node first, then additional nodes
+        nodes = [
             {
-                "nodes": [
-                    {
-                        "host": ts_host,  # For Typesense Cloud use xxx.a1.typesense.net
-                        "port": int(ts_port),  # For Typesense Cloud use 443
-                        "protocol": ts_protocol,  # For Typesense Cloud use https
-                    }
-                ],
-                "api_key": api_key,
-                "connection_timeout_seconds": int(connection_timeout) or 300,
+                "host": ts_host,
+                "port": int(ts_port),
+                "protocol": ts_protocol,
             }
-        )
+        ]
+        nodes.extend(self._parse_additional_nodes())
+
+        client_config = {
+            "nodes": nodes,
+            "api_key": api_key,
+            "connection_timeout_seconds": int(connection_timeout) or 10,
+            "num_retries": self.get_num_retries or 3,
+            "retry_interval_seconds": self.get_retry_interval_seconds or 1.0,
+            "healthcheck_interval_seconds": self.get_healthcheck_interval_seconds or 60,
+        }
+        self.data.client = typesense.Client(client_config)
         return self.data.client
 
     def test_connection(self):
