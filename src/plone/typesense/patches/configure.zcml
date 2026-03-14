@@ -33,4 +33,13 @@
       preserveOriginal="True"
   />
 
+  <!-- Patch moveObjectsByDelta() to reindex positions in Typesense -->
+  <monkey:patch
+      original="moveObjectsByDelta"
+      replacement=".moveObjectsByDelta"
+      class="OFS.OrderSupport.OrderSupport"
+      description="Reindex object positions in Typesense when content is reordered"
+      preserveOriginal="True"
+  />
+
 </configure>
