@@ -1,25 +1,29 @@
 [project]
 name = "plone.typesense"
-version = "1.0a1"
-description = "Typesense Plone integration"
+version = "1.0a2"
+description = "Typesense search engine integration for Plone CMS"
 readme = "README.md"
 license = "GPL-2.0-only"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [
     { name = "Maik Derstappen", email = "md@derico.de" },
 ]
-keywords = ["Python", "Plone", "CMS"]
+keywords = ["Python", "Plone", "CMS", "Typesense", "search"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
     "Framework :: Plone",
     "Framework :: Plone :: Addon",
     "Framework :: Plone :: 6.1",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "Plone==6.1.4",
     "setuptools",
     "z3c.jbot",
     "plone.api>=1.8.4",
