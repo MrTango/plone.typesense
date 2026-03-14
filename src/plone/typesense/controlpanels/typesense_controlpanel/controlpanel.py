@@ -18,6 +18,7 @@ from zope.interface import Interface
 from plone.app.z3cform.widget import SingleCheckBoxBoolFieldWidget
 from plone import schema
 from plone.typesense import _
+from plone.typesense import log
 from plone.typesense.interfaces import IPloneTypesenseLayer
 from plone.autoform import directives
 
@@ -270,8 +271,57 @@ class TypesenseControlpanel(RegistryEditForm):
 
 
 
+class TypesenseControlpanelFormWrapper(ControlPanelFormWrapper):
+    """Custom control panel wrapper with data sync indicator."""
+
+    @property
+    def data_sync_status(self):
+        """Compare document counts between Plone catalog and Typesense.
+
+        Returns a dict with counts and sync status, or None if unavailable.
+        """
+        try:
+            ts_connector = getUtility(ITypesenseConnector)
+            if not ts_connector.enabled:
+                return None
+
+            # Get catalog count
+            catalog = api.portal.get_tool("portal_catalog")
+            catalog_count = len(catalog.unrestrictedSearchResults())
+
+            # Get Typesense count
+            ts_client = ts_connector.get_client()
+            collection_name = ts_connector.collection_base_name
+            collection_info = ts_client.collections[collection_name].retrieve()
+            typesense_count = collection_info.get("num_documents", 0)
+
+            in_sync = catalog_count == typesense_count
+
+            return {
+                "catalog_count": catalog_count,
+                "typesense_count": typesense_count,
+                "in_sync": in_sync,
+                "difference": abs(catalog_count - typesense_count),
+            }
+        except Exception as exc:
+            log.debug(f"Could not retrieve sync status: {exc}")
+            return None
+
+    @property
+    def connection_status(self):
+        """Check if Typesense connection is healthy."""
+        try:
+            ts_connector = getUtility(ITypesenseConnector)
+            if not ts_connector.enabled:
+                return None
+            ts_client = ts_connector.get_client()
+            return ts_client.operations.is_healthy()
+        except Exception:
+            return False
+
+
 TypesenseControlpanelView = layout.wrap_form(
-    TypesenseControlpanel, ControlPanelFormWrapper
+    TypesenseControlpanel, TypesenseControlpanelFormWrapper
 )
 
 
