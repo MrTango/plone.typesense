@@ -4,11 +4,12 @@ from typing import Tuple
 from dataclasses import dataclass
 from Products.CMFCore.interfaces import IIndexQueueProcessor
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
-from zope.interface import Interface
+from zope.interface import Attribute, Interface
+
 
 class ITypesenseManager(Interface):
-    """
-    """
+    """"""
+
 
 class IPloneTypesenseLayer(IDefaultBrowserLayer):
     """Marker interface that defines a browser layer."""
@@ -16,6 +17,46 @@ class IPloneTypesenseLayer(IDefaultBrowserLayer):
 
 class ITypesenseSearchIndexQueueProcessor(IIndexQueueProcessor):
     """Index queue processor for Typesense."""
+
+
+class IMappingAdapter(Interface):
+    """Adapter that generates a Typesense collection schema from a Plone catalog.
+
+    Given a portal_catalog, this adapter introspects the registered indexes
+    and produces a Typesense-compatible schema dict.
+    """
+
+    catalog = Attribute("The portal_catalog being adapted")
+
+    def get_schema(collection_name=None):
+        """Return a complete Typesense collection schema dict.
+
+        :param collection_name: Optional name for the collection
+        :returns: dict suitable for typesense.collections.create()
+        """
+
+    def get_field_names():
+        """Return a set of field names that would be in the schema."""
+
+
+class IMappingProvider(Interface):
+    """Extension point: allows external packages to contribute extra fields
+    to the Typesense schema.
+
+    Register named adapters for (catalog,) -> IMappingProvider to add
+    custom fields beyond those auto-detected from catalog indexes.
+    """
+
+    def get_fields():
+        """Return a list of Typesense field definition dicts.
+
+        Each dict should have at minimum 'name' and 'type' keys.
+        Example::
+
+            [
+                {"name": "my_custom_field", "type": "string", "facet": True},
+            ]
+        """
 
 
 @dataclass

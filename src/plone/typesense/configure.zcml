@@ -43,6 +43,12 @@
 
   <!-- -*- extra stuff goes here -*- -->
 
+  <adapter
+      for="*"
+      provides=".interfaces.IMappingAdapter"
+      factory=".mapping.MappingAdapter"
+      />
+
   <include package=".views" />
 
   <include package=".controlpanels" />
