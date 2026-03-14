@@ -2,6 +2,8 @@
 
 These patches intercept catalog search and indexing methods and route them to
 Typesense when it's active, falling back to the original Plone catalog when inactive.
+Also patches moveObjectsByDelta to reindex positions in Typesense when
+content is reordered.
 """
 from zope.component import queryUtility
 
@@ -59,6 +61,7 @@ def unrestrictedSearchResults(self, REQUEST=None, **kw):
         return self._old_unrestrictedSearchResults(REQUEST, **kw)
 
 
+<<<<<<< HEAD
 def uncatalog_object(self, uid, *args, **kwargs):
     """Patched uncatalog_object that queues a Typesense delete.
 
@@ -158,3 +161,56 @@ def manage_catalogClear(self, *args, **kwargs):
             )
 
     return self._old_manage_catalogClear(*args, **kwargs)
+
+
+def moveObjectsByDelta(self, ids, delta, subset_ids=None,
+                       suppress_events=False):
+    """Patched moveObjectsByDelta to reindex positions in Typesense.
+
+    When content is reordered in a folder, the getObjPositionInParent
+    index needs to be updated in Typesense for all affected objects.
+    This patch calls the original method first, then queues reindex
+    operations for the moved objects.
+
+    @param self: OrderedContainer/Folder instance
+    @param ids: List of object ids to move
+    @param delta: Number of positions to move (positive=down, negative=up)
+    @param subset_ids: Optional subset of ids to consider for ordering
+    @param suppress_events: If True, don't fire events
+    @return: Result from original moveObjectsByDelta
+    """
+    # Call original method first
+    result = self._old_moveObjectsByDelta(
+        ids, delta, subset_ids=subset_ids,
+        suppress_events=suppress_events
+    )
+
+    # Queue reindex for affected objects in Typesense
+    try:
+        manager = TypesenseManager()
+        if not manager.active:
+            return result
+
+        from Products.CMFCore.indexing import getQueue
+
+        queue = getQueue()
+
+        if isinstance(ids, str):
+            ids = [ids]
+
+        for obj_id in ids:
+            obj = self.get(obj_id)
+            if obj is not None:
+                log.debug(
+                    f"moveObjectsByDelta: queueing reindex for "
+                    f"{obj_id} (getObjPositionInParent)"
+                )
+                queue.reindex(obj, ["getObjPositionInParent"])
+
+    except Exception as exc:
+        log.warning(
+            f"Failed to queue Typesense reindex after moveObjectsByDelta: "
+            f"{exc}"
+        )
+
+    return result

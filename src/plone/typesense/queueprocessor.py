@@ -8,6 +8,7 @@ from zope.schema import getFields
 
 from plone import api
 from plone.typesense import log
+from plone.typesense.blob_extraction import get_searchable_blob_text
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
 from plone.typesense.indexes import get_index
 from plone.typesense.interfaces import (
@@ -155,6 +156,9 @@ class IndexProcessor:
             if value is not None:
                 index_data[index_name] = value
 
+        # Enrich SearchableText with extracted blob text
+        self._enrich_with_blob_text(obj, index_data)
+
         additional_providers = getAdapters((obj,), IAdditionalIndexDataProvider)
         for name, adapter in additional_providers:
             try:
@@ -166,6 +170,29 @@ class IndexProcessor:
                 )
         log.debug(f"index_data: {index_data}")
         return index_data
+
+    def _enrich_with_blob_text(self, obj, index_data):
+        """Append extracted blob text to SearchableText in index_data.
+
+        If the content object has blob fields (PDF, DOCX, etc.), extract
+        their text content and append it to SearchableText so it becomes
+        searchable via Typesense.
+
+        @param obj: The content object
+        @param index_data: Dict of index data being built (modified in place)
+        """
+        try:
+            blob_text = get_searchable_blob_text(obj)
+        except Exception as exc:
+            log.debug(f"Blob text extraction failed for {obj.id}: {exc}")
+            blob_text = ""
+
+        if blob_text:
+            existing = index_data.get("SearchableText", "")
+            if existing:
+                index_data["SearchableText"] = f"{existing} {blob_text}"
+            else:
+                index_data["SearchableText"] = blob_text
 
     def _normalize_value_for_typesense(self, field_name, value):
         """Normalize field values to match Typesense schema types.
