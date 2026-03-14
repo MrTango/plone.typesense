@@ -39,3 +39,4 @@ venv/
 # excludes
 /typesense-data/*
 /.playwright-mcp/
+.claude/worktrees/
