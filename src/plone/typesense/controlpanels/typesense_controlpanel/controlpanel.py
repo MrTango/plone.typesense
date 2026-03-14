@@ -36,8 +36,11 @@ class ITypesenseControlpanel(Interface):
 
     api_key = schema.TextLine(
         title=_("Typesense Admin API key"),
+        description=_(
+            "Leave empty to use the TYPESENSE_API_KEY environment variable."
+        ),
         default="",
-        required=True,
+        required=False,
     )
 
     host = schema.TextLine(
@@ -76,16 +79,57 @@ class ITypesenseControlpanel(Interface):
         readonly=False,
     )
 
+    additional_nodes = schema.Text(
+        title=_("Additional Typesense Nodes"),
+        description=_(
+            "One node per line in the format host:port:protocol "
+            "(e.g. node2.example.com:8108:http). "
+            "The primary host/port/protocol above is always used as the first node."
+        ),
+        default="",
+        required=False,
+        readonly=False,
+    )
+
     timeout = schema.Int(
         title=_(
             "Typesense connection timeout",
         ),
         description=_(
-            "Connection timeout in milliseconds",
+            "Connection timeout in seconds",
         ),
         required=False,
-        default=300,
-        # defaultFactory=get_default_timeout,
+        default=10,
+        readonly=False,
+    )
+
+    num_retries = schema.Int(
+        title=_("Number of retries"),
+        description=_(
+            "Number of times to retry a request on failure."
+        ),
+        required=False,
+        default=3,
+        readonly=False,
+    )
+
+    retry_interval_seconds = schema.Float(
+        title=_("Retry interval (seconds)"),
+        description=_(
+            "Seconds to wait between retries."
+        ),
+        required=False,
+        default=1.0,
+        readonly=False,
+    )
+
+    healthcheck_interval_seconds = schema.Int(
+        title=_("Healthcheck interval (seconds)"),
+        description=_(
+            "How often to check node health in seconds."
+        ),
+        required=False,
+        default=60,
         readonly=False,
     )
 
