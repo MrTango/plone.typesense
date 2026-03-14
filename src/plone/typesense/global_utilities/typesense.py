@@ -1,4 +1,3 @@
-import json
 import threading
 
 import typesense
@@ -7,7 +6,7 @@ from plone.typesense import _, log
 from zope.interface import Interface, implementer
 
 
-class TypesenseError(BaseException):
+class TypesenseError(Exception):
     def __init__(self, reason, exit_status=1):
         self.reason = reason
         self.exit_status = exit_status
@@ -151,47 +150,35 @@ class TypesenseConnector:
 
     def update(self, objects) -> None:
         """update given objects"""
+        if not objects:
+            return
         ts = self.get_client()
-        objects_for_bulk = ""
         for obj in objects:
-            log.info(f"object: {object}")
-            res = ts.collections[self.collection_base_name].documents.update(json.dumps(obj), {"filter_by": f"id: {obj['id']}"})
+            log.info(f"Updating object: {obj.get('id', 'unknown')}")
+            ts.collections[self.collection_base_name].documents[obj["id"]].update(obj)
 
     def index(self, objects) -> None:
         """index given objects"""
+        if not objects:
+            return
         ts = self.get_client()
-        objects_for_bulk = ""
-        for obj in objects:
-            log.info(f"object: {object}")
-            res = ts.collections[self.collection_base_name].documents.upsert(json.dumps(obj))
-            # objects_for_bulk += f"{json.dumps(obj)}\n"
-
-        # log.info(f"Bulk import objects into {self.collection_base_name}'...")
-        # res = ts.collections[self.collection_base_name].documents.import_(
-        #     objects_for_bulk, {"action": "emplace"}
-        # )
-        # res = res.split("\n")
-        # # checks if number of indexed object and object in objects are equal
-        # if not len(res) == len(objects):
-        #     raise SystemError(
-        #         _(
-        #             "Unable to index all objects. (indexed: %(indexed)s, "
-        #             "total: %(total)s)\n%(result)s",
-        #             indexed=len(res),
-        #             total=len(objects),
-        #             result=res,
-        #         )
-        #     )
+        log.info(f"Indexing {len(objects)} objects into '{self.collection_base_name}'.")
+        ts.collections[self.collection_base_name].documents.import_(
+            objects, {"action": "upsert"}
+        )
 
     def delete(self, uids) -> None:
-        """ """
+        """Delete documents by their UIDs from Typesense."""
+        if not uids:
+            return
         ts = self.get_client()
         log.info(
-            f"Delete uids: {', '.join(uids)} from collection "
+            f"Delete {len(uids)} uids from collection "
             f"'{self.collection_base_name}'."
         )
+        uid_list = ",".join([f"`{uid}`" for uid in uids])
         ts.collections[self.collection_base_name].documents.delete(
-            {"filter_by=id": uids}
+            {"filter_by": f"id:[{uid_list}]"}
         )
 
     def clear(self) -> None:

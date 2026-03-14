@@ -1,7 +1,7 @@
 from Acquisition import aq_base
 from Acquisition import aq_get
 from Acquisition import aq_parent
-from plone.typesense import interfaces
+from plone.typesense import interfaces, log
 from plone.typesense.utils import get_brain_from_path
 from Products.ZCatalog.CatalogBrains import AbstractCatalogBrain
 from Products.ZCatalog.interfaces import ICatalogBrain
@@ -70,7 +70,6 @@ def BrainFactory(manager):
 
         @param hit: Typesense hit with 'document' containing indexed fields
         """
-        print(f"\n[BrainFactory.factory] CALLED with hit keys: {hit.keys() if isinstance(hit, dict) else type(hit)}", flush=True)
         catalog = manager.catalog
         zcatalog = catalog._catalog
 
@@ -79,17 +78,10 @@ def BrainFactory(manager):
         path = document.get("path", None)
 
         if path:
-            print(f"\n[BrainFactory] path={path}", flush=True)
             brain = get_brain_from_path(zcatalog, path)
-            print(f"[BrainFactory] brain from catalog={brain}, type={type(brain)}", flush=True)
             if not brain:
                 # Create TypesenseBrain from document data
-                print(f"[BrainFactory] Creating TypesenseBrain from document", flush=True)
                 brain = TypesenseBrain(record=document, catalog=catalog)
-            else:
-                print(f"[BrainFactory] Using catalog brain, has Title: {hasattr(brain, 'Title')}", flush=True)
-                if hasattr(brain, 'Title'):
-                    print(f"[BrainFactory] brain.Title={brain.Title}", flush=True)
 
             # Handle highlighting if enabled
             try:
@@ -101,13 +93,10 @@ def BrainFactory(manager):
                         if idx > 0 and fraglen > manager.highlight_threshold:
                             break
                         fragments.append(i)
-                    brain["Description"] = " ... ".join(fragments)
+                    brain.Description = " ... ".join(fragments)
             except Exception as e:
-                print(f"[BrainFactory] ERROR in highlighting: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
+                log.warning(f"Error in highlighting: {e}")
 
-            print(f"[BrainFactory] Returning brain: {brain}", flush=True)
             return brain
         return None
 
@@ -116,26 +105,13 @@ def BrainFactory(manager):
 
 class TypesenseResult:
     def __init__(self, manager, query, **query_params):
-        print(f"\n[TypesenseResult.__init__] START - query={query}", flush=True)
         assert "sort" not in query_params
         assert "start" not in query_params
-        print(f"[TypesenseResult.__init__] Asserts passed", flush=True)
         self.manager = manager
-        print(f"[TypesenseResult.__init__] Manager set", flush=True)
         self.bulk_size = manager.bulk_size
-        print(f"[TypesenseResult.__init__] bulk_size={self.bulk_size}", flush=True)
-        print(f"\n[TypesenseResult] About to get QueryAssembler adapter", flush=True)
-        print(f"[TypesenseResult] request={getRequest()}, manager={manager}", flush=True)
-        try:
-            qassembler = getMultiAdapter(
-                (getRequest(), manager), interfaces.IQueryAssembler
-            )
-            print(f"[TypesenseResult] Got QueryAssembler: {qassembler}", flush=True)
-        except Exception as e:
-            print(f"[TypesenseResult] ERROR getting adapter: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            raise
+        qassembler = getMultiAdapter(
+            (getRequest(), manager), interfaces.IQueryAssembler
+        )
         dquery, self.sort = qassembler.normalize(query)
         self.query = qassembler(dquery)
 
@@ -168,11 +144,10 @@ class TypesenseResult:
             - self[-2]: 500 bucket: 23 item
             - self[-55]: 450 bucket: 19 item
         """
-        print(f"\n[TypesenseResult.__getitem__] key={key}, count={self.count}, results keys={list(self.results.keys())}", flush=True)
         bulk_size = self.bulk_size
         count = self.count
         if isinstance(key, slice):
-            return [self[i] for i in range(key.start, key.end)]
+            return [self[i] for i in range(key.start or 0, key.stop or count)]
         if key + 1 > count:
             raise IndexError
         if key < 0 and abs(key) > count:
@@ -194,8 +169,4 @@ class TypesenseResult:
                 self.query, sort=self.sort, start=start
             )
             self.results[result_key] = result["hits"]
-        print(f"[TypesenseResult.__getitem__] result_key={result_key}, result_index={result_index}", flush=True)
-        print(f"[TypesenseResult.__getitem__] self.results[{result_key}] = {self.results[result_key]}", flush=True)
-        item = self.results[result_key][result_index]
-        print(f"[TypesenseResult.__getitem__] Returning item: {item}", flush=True)
-        return item
+        return self.results[result_key][result_index]

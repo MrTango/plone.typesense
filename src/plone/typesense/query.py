@@ -6,6 +6,27 @@ from plone.typesense.utils import get_ts_only_indexes
 from zope.interface import implementer
 
 
+class MockIndex:
+    """Mock index for fields deleted from portal_catalog but still in Typesense."""
+
+    def __init__(self, index_id):
+        self.id = index_id
+        self._fieldname = index_id
+
+        if index_id == 'SearchableText':
+            self._indexed_attrs = ['Title', 'Description', 'text', 'body', 'id']
+        else:
+            self._indexed_attrs = None
+
+    def getIndexSourceNames(self):
+        if self._indexed_attrs:
+            return self._indexed_attrs
+        return [self.id]
+
+    def __repr__(self):
+        return f"<MockIndex {self.id}>"
+
+
 @implementer(IQueryAssembler)
 class QueryAssembler:
     def __init__(self, request, manager):
@@ -63,27 +84,6 @@ class QueryAssembler:
             index = get_index(catalog, key)
             if index is None and key in ts_only_indexes:
                 # deleted index for plone performance but still need on TS
-                # Create a mock index object with all required attributes
-                class MockIndex:
-                    def __init__(self, index_id):
-                        self.id = index_id
-                        self._fieldname = index_id
-
-                        # For SearchableText, specify all fields that should be indexed
-                        # This mimics Plone's real SearchableText index configuration
-                        if index_id == 'SearchableText':
-                            self._indexed_attrs = ['Title', 'Description', 'text', 'id']
-                        else:
-                            self._indexed_attrs = None
-
-                    def getIndexSourceNames(self):
-                        if self._indexed_attrs:
-                            return self._indexed_attrs
-                        return [self.id]
-
-                    def __repr__(self):
-                        return f"<MockIndex {self.id}>"
-
                 mock_index = MockIndex(key)
                 index = TZCTextIndex(catalog, mock_index)
 

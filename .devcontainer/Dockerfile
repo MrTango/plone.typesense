@@ -45,7 +45,7 @@ ENV DEVCONTAINER=true
 
 # Create workspace and config directories and set permissions
 RUN mkdir -p /workspace /home/node/.claude /home/node/.opencode /home/node/.config/opencode && \
-  chown -R node:node /workspace /home/node/.claude /home/node/.opencode /home/node/.config/opencode
+  chown -R node:node /workspace /home/node/.claude /home/node/.opencode /home/node/.config
 
 WORKDIR /workspace
 

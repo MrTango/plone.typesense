@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-
-# from plone.typesense import _
-# from Products.Five.browser.pagetemplatefile import ViewPageTemplateFile
 from Products.CMFCore.interfaces import ICatalogAware
 from Products.Five.browser import BrowserView
 from zope.component import getUtility
@@ -22,8 +18,8 @@ class TypesenseReindexCollection(BrowserView):
     def __call__(self):
         portal = api.portal.get()
         ts_connector = getUtility(ITypesenseConnector)
-        # ts_client = ts_connector.get_client()
         self.objects = []
+        self.count = 0
         batch_size = 100
 
         def _index_object(obj, path):
@@ -32,9 +28,14 @@ class TypesenseReindexCollection(BrowserView):
             self.objects.append(obj)
             if len(self.objects) >= batch_size:
                 ts_connector.index(self.objects)
+                self.count += len(self.objects)
                 self.objects = []
-            if len(self.objects) > 0:
-                ts_connector.index(self.objects)
 
         portal.ZopeFindAndApply(portal, search_sub=True, apply_func=_index_object)
-        return self.index()
+        # Flush remaining objects
+        if self.objects:
+            ts_connector.index(self.objects)
+            self.count += len(self.objects)
+            self.objects = []
+        log.info(f"Reindexed {self.count} objects into Typesense.")
+        return f"Reindexed {self.count} objects into Typesense."

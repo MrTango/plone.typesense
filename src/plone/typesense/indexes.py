@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from html.parser import HTMLParser
 from Acquisition import aq_base, aq_parent
 from DateTime import DateTime
 from Missing import MV
@@ -14,6 +15,20 @@ from Products.PluginIndexes.UUIDIndex.UUIDIndex import UUIDIndex
 from Products.ZCTextIndex.ZCTextIndex import ZCTextIndex
 
 from plone.typesense import log
+
+
+class HTMLStripper(HTMLParser):
+    """Strip HTML tags and return plain text."""
+
+    def __init__(self):
+        super().__init__()
+        self.text_parts = []
+
+    def handle_data(self, data):
+        self.text_parts.append(data)
+
+    def get_data(self):
+        return ' '.join(self.text_parts)
 
 
 def _one(val):
@@ -322,19 +337,6 @@ class TZCTextIndex(BaseIndex):
                         body = body.raw
                     # Strip HTML tags if present
                     if isinstance(body, str) and ('<' in body or '>' in body):
-                        from html.parser import HTMLParser
-
-                        class HTMLStripper(HTMLParser):
-                            def __init__(self):
-                                super().__init__()
-                                self.text_parts = []
-
-                            def handle_data(self, data):
-                                self.text_parts.append(data)
-
-                            def get_data(self):
-                                return ' '.join(self.text_parts)
-
                         try:
                             stripper = HTMLStripper()
                             stripper.feed(body)
@@ -378,19 +380,6 @@ class TZCTextIndex(BaseIndex):
 
             # Strip HTML tags if present
             if isinstance(text, str) and ('<' in text or '>' in text):
-                from html.parser import HTMLParser
-
-                class HTMLStripper(HTMLParser):
-                    def __init__(self):
-                        super().__init__()
-                        self.text_parts = []
-
-                    def handle_data(self, data):
-                        self.text_parts.append(data)
-
-                    def get_data(self):
-                        return ' '.join(self.text_parts)
-
                 try:
                     stripper = HTMLStripper()
                     stripper.feed(text)

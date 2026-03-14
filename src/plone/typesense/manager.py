@@ -139,11 +139,9 @@ class TypesenseManager:
                 params['sort_by'] = ','.join(sort_parts)
 
         log.debug(f"Typesense search params: {params}")
-        print(f"\n[Manager._search] Typesense params: {params}", flush=True)
 
         # Execute search
         results = client.collections[self.collection_name].documents.search(params)
-        print(f"[Manager._search] Typesense returned {results.get('found', 0)} results", flush=True)
 
         return {
             'hits': results.get('hits', []),
@@ -158,10 +156,8 @@ class TypesenseManager:
         @param query_params: Parameters to pass to the search method
             'stored_fields': the list of fields to get from stored source
         """
-        print(f"\n[Manager.search] Creating TypesenseResult for query: {query}", flush=True)
         factory = BrainFactory(self)
         result = TypesenseResult(self, query, **query_params)
-        print(f"[Manager.search] TypesenseResult created, count: {result.count}", flush=True)
         return LazyMap(factory, result, result.count)
 
     def search_results(self, request=None, check_perms=False, **kw):
@@ -180,7 +176,6 @@ class TypesenseManager:
 
         query = request.copy() if isinstance(request, dict) else {}
         query.update(kw)
-        check_perms = False
         if check_perms:
             show_inactive = query.get("show_inactive", False)
             if isinstance(request, dict) and not show_inactive:
@@ -195,11 +190,9 @@ class TypesenseManager:
                 query["effectiveRange"] = DateTime()
         orig_query = query.copy()
         log.debug(f"Typesense search with query: {orig_query}")
-        print(f"\n[Manager.search_results] About to call self.search() with query: {orig_query}", flush=True)
 
         try:
             result = self.search(query)
-            print(f"[Manager.search_results] Got result: {result}", flush=True)
             return result
         except Exception:
             if self.raise_search_exception is True:

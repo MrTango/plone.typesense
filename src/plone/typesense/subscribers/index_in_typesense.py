@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
+from plone.typesense import log
 
 
 def handler(obj, event):
     """Event handler"""
-    print("{0} on object {1}".format(event.__class__, obj.absolute_url()))
-    # users_can_view: []
-    # all fields without fieldlevel permission
-    # all fields with fieldlevel permission
+    log.debug(f"{event.__class__} on object {obj.absolute_url()}")

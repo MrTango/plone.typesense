@@ -49,15 +49,19 @@ class IndexProcessor:
 
     def ts_index(self, objects):
         """index objects in Typesense"""
-        from pprint import pprint
-        pprint(objects)
+        log.debug(f"ts_index: {len(objects)} objects")
         self.ts_connector.index(objects)
 
     def ts_update(self, objects):
         """update indexed objects in Typesense"""
-        from pprint import pprint
-        pprint(objects)
+        log.debug(f"ts_update: {len(objects)} objects")
         self.ts_connector.update(objects)
+
+    def ts_delete(self, objects):
+        """delete objects from Typesense"""
+        uids = [obj["id"] for obj in objects]
+        log.debug(f"ts_delete: {len(uids)} objects")
+        self.ts_connector.delete(uids)
 
     @property
     def catalog(self):
@@ -95,7 +99,7 @@ class IndexProcessor:
             log.warning(f"could not find obj for: {uuid}")
             return index_data
         else:
-            print(f"found obj: {obj.id}")
+            log.debug(f"found obj: {obj.id}")
         wrapped_object = self.wrap_object(obj)
         attributes = attributes if attributes else self.all_attributes
         catalog = self.catalog
@@ -108,29 +112,7 @@ class IndexProcessor:
             # If index not in catalog but is in ts_only_indexes, create MockIndex
             if index is None and index_name in ts_only_indexes:
                 from plone.typesense.indexes import TZCTextIndex
-
-                # Create mock index with proper configuration
-                class MockIndex:
-                    def __init__(self, index_id):
-                        self.id = index_id
-                        self._fieldname = index_id
-
-                        # For SearchableText, specify all fields that should be indexed
-                        # Common Plone Document attributes that contain searchable text:
-                        # - Title (method)
-                        # - Description (method)
-                        # - text (RichText field - most common for Dexterity Documents)
-                        # - body (alternative field name for some content types)
-                        # - id (id of the object)
-                        if index_id == 'SearchableText':
-                            self._indexed_attrs = ['Title', 'Description', 'text', 'body', 'id']
-                        # For other indexes, don't set _indexed_attrs at all
-                        # This makes TZCTextIndex.get_value() fall back to using _fieldname
-
-                    def getIndexSourceNames(self):
-                        if hasattr(self, '_indexed_attrs'):
-                            return self._indexed_attrs
-                        return [self.id]
+                from plone.typesense.query import MockIndex
 
                 mock_index = MockIndex(index_name)
                 index = TZCTextIndex(catalog._catalog, mock_index)
@@ -178,7 +160,7 @@ class IndexProcessor:
         # if additional_providers:
         #     for _, adapter in additional_providers:
         #         index_data.update(adapter(catalog, index_data))
-        print(f"index_data:\n {index_data}")
+        log.debug(f"index_data: {index_data}")
         return index_data
 
     def _normalize_value_for_typesense(self, field_name, value):
@@ -378,22 +360,32 @@ class IndexProcessor:
         """queue a reindex operation for the given object and attributes"""
         if not self.active:
             return
-        print(f"reindex: {obj.id}: {attributes}")
+        log.debug(f"reindex: {obj.id}: {attributes}")
         self.index(obj, attributes)
 
     def unindex(self, obj):
         """queue an unindex operation for the given object"""
         if not self.active:
             return
-        print(f"unindex: {obj.id}")
+        uid = api.content.get_uuid(obj) if obj.portal_type != "Plone Site" else "/"
+        if uid is None:
+            return
+        log.debug(f"unindex: {obj.id} (uid={uid})")
+        actions = self.actions
+        # Remove from index/reindex if queued
+        if uid in actions.index:
+            actions.index.pop(uid)
+        if uid in actions.reindex:
+            actions.reindex.pop(uid)
+        actions.unindex[uid] = {}
 
     def begin(self,):
         """called before processing of the queue is started"""
-        print(f"begin()")
+        log.debug("begin()")
 
     def commit(self, wait=None):
         """called after processing of the queue has ended"""
-        print("commit()")
+        log.debug("commit()")
         self.commit_ts()
 
     def commit_ts(self, wait=None):
@@ -404,20 +396,20 @@ class IndexProcessor:
         items = len(actions) if actions else 0
         if self.ts_client and items:
             ts_data = {}
-            from pprint import pprint
             data = actions.all()
-            pprint(data)
+            log.debug(f"commit_ts: processing {len(data)} actions")
             for action, uuid, payload in data:
                 payload = self._prepare_for_typesense(uuid, payload)
-                pprint(payload)
                 if action not in ts_data:
                     ts_data[action] = []
                 ts_data[action].append(payload)
-            print(f"actions: {ts_data.keys()}")
+            log.debug(f"actions: {ts_data.keys()}")
             if "index" in ts_data:
                 self.ts_index(ts_data["index"])
             if "update" in ts_data:
                 self.ts_update(ts_data["update"])
+            if "delete" in ts_data:
+                self.ts_delete(ts_data["delete"])
         self._clean_up()
 
     def _prepare_for_typesense(self, uuid, payload):
@@ -431,7 +423,7 @@ class IndexProcessor:
 
     def abort(self):
         """called if processing of the queue needs to be aborted"""
-        print(f"abort()")
+        log.debug("abort()")
 
     def get_blob_data(self, uuid, obj):
         """Go thru schemata and extract infos about blob fields"""
