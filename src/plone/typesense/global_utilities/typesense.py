@@ -191,21 +191,25 @@ class TypesenseConnector:
         ts.collections[collection_name].delete()
         self.init_collection()
 
-    def init_collection(self) -> None:
+    def init_collection(self, schema=None) -> None:
+        """Initialize a Typesense collection.
+
+        :param schema: Optional schema dict. If not provided, uses the
+            schema from the control panel registry (ts_schema).
+            When a catalog is available, callers can use
+            ``convert_catalog_to_typesense()`` from ``plone.typesense.mapping``
+            to auto-generate a schema from catalog indexes.
+        """
         ts = self.get_client()
         try:
             ts.collections[self.collection_base_name].retrieve()
         except typesense.exceptions.ObjectNotFound:
             # To allow rolling updates, we work with index aliases
             aliased_index_name = self._get_next_aliased_collection_name()
-            # index_name / collection_name is part of the schema defined in
-            # self._index_config
-            index_config = self.get_ts_schema
-            index_config.update(
-                {
-                    "name": aliased_index_name,
-                }
-            )
+            index_config = schema if schema else self.get_ts_schema
+            # Ensure we use a copy so we don't mutate the original
+            index_config = dict(index_config)
+            index_config["name"] = aliased_index_name
             log.info(f"Create aliased_index_name '{aliased_index_name}'...")
             ts.collections.create(index_config)
             log.info(
@@ -215,6 +219,21 @@ class TypesenseConnector:
             ts.aliases.upsert(
                 self.collection_base_name, {"collection_name": aliased_index_name}
             )
+
+    def init_collection_from_catalog(self, catalog) -> dict:
+        """Initialize a Typesense collection using an auto-generated schema
+        derived from the Plone catalog indexes.
+
+        :param catalog: The Plone portal_catalog tool
+        :returns: The generated schema dict
+        """
+        from plone.typesense.mapping import convert_catalog_to_typesense
+
+        schema = convert_catalog_to_typesense(
+            catalog, collection_name=self.collection_base_name
+        )
+        self.init_collection(schema=schema)
+        return schema
 
     # def each(self) -> Iterator[dict[str, Any]]:
     #     """ """

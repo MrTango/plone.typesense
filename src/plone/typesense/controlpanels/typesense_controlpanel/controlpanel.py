@@ -17,8 +17,7 @@ from zope.component.hooks import getSite
 from zope.interface import Interface
 from plone.app.z3cform.widget import SingleCheckBoxBoolFieldWidget
 from plone import schema
-from plone.typesense import _
-from plone.typesense import log
+from plone.typesense import _, log
 from plone.typesense.interfaces import IPloneTypesenseLayer
 from plone.autoform import directives
 
@@ -248,26 +247,96 @@ class TypesenseControlpanel(RegistryEditForm):
 
     @button.buttonAndHandler(_("clear and rebuild"), name="clear_and_rebuild")
     def handle_clear_and_rebuild(self, action):
-        """ clear and rebuild collection from Plone
-        """
+        """clear and rebuild collection from Plone"""
         portal = api.portal.get()
         ts_connector = getUtility(ITypesenseConnector)
-        # ts_client = ts_connector.get_client()
         self.objects = []
         batch_size = 100
 
-        # def _index_object(obj, path):
-        #     if not ICatalogAware.providedBy(obj):
-        #         return
-        #     self.objects.append(obj)
-        #     if len(self.objects) >= batch_size:
-        #         ts_connector.index(self.objects)
-        #         self.objects = []
-        #     if len(self.objects) > 0:
-        #         ts_connector.index(self.objects)
+    @button.buttonAndHandler(_("detect schema changes"), name="detect_schema_changes")
+    def handle_detect_schema_changes(self, action):
+        """Compare catalog indexes against current Typesense schema and
+        report differences."""
+        from plone.typesense.mapping import detect_schema_changes
 
-        # portal.ZopeFindAndApply(portal, search_sub=True, apply_func=_index_object)
-        # return self.index()
+        ts_connector = getUtility(ITypesenseConnector)
+        catalog = api.portal.get_tool("portal_catalog")
+        messages = IStatusMessage(self.request)
+
+        try:
+            ts_client = ts_connector.get_client()
+            collection_name = ts_connector.collection_base_name
+            current_schema = ts_client.collections[collection_name].retrieve()
+        except Exception as e:
+            messages.addStatusMessage(
+                f"Could not retrieve Typesense schema: {e}", "error"
+            )
+            self.request.response.redirect(self.request.getURL())
+            return
+
+        diff = detect_schema_changes(catalog, current_schema)
+        added = diff.get("added", [])
+        removed = diff.get("removed", [])
+        type_changed = diff.get("type_changed", [])
+
+        if not added and not removed and not type_changed:
+            messages.addStatusMessage(
+                "Schema is in sync: no differences detected between "
+                "catalog indexes and Typesense schema.",
+                "info",
+            )
+        else:
+            parts = []
+            if added:
+                names = ", ".join(f["name"] for f in added)
+                parts.append(f"New in catalog (not in Typesense): {names}")
+            if removed:
+                names = ", ".join(f["name"] for f in removed)
+                parts.append(f"In Typesense but not in catalog: {names}")
+            if type_changed:
+                descs = ", ".join(
+                    f"{c['name']} (catalog: {c['catalog_type']}, "
+                    f"typesense: {c['typesense_type']})"
+                    for c in type_changed
+                )
+                parts.append(f"Type mismatches: {descs}")
+
+            msg = "Schema differences detected. " + " | ".join(parts)
+            messages.addStatusMessage(msg, "warning")
+            log.warning("Typesense schema diff: %s", msg)
+
+        self.request.response.redirect(self.request.getURL())
+
+    @button.buttonAndHandler(
+        _("generate schema from catalog"), name="generate_schema_from_catalog"
+    )
+    def handle_generate_schema(self, action):
+        """Auto-generate a Typesense schema from the current catalog indexes
+        and store it in the control panel ts_schema field."""
+        from plone.typesense.mapping import convert_catalog_to_typesense
+
+        catalog = api.portal.get_tool("portal_catalog")
+        ts_connector = getUtility(ITypesenseConnector)
+        messages = IStatusMessage(self.request)
+
+        try:
+            schema = convert_catalog_to_typesense(
+                catalog, collection_name=ts_connector.collection_base_name
+            )
+            api.portal.set_registry_record(
+                "plone.typesense.typesense_controlpanel.ts_schema", schema
+            )
+            messages.addStatusMessage(
+                f"Schema generated with {len(schema.get('fields', []))} fields "
+                f"and saved to the control panel.",
+                "info",
+            )
+        except Exception as e:
+            messages.addStatusMessage(
+                f"Error generating schema: {e}", "error"
+            )
+
+        self.request.response.redirect(self.request.getURL())
 
 
 
