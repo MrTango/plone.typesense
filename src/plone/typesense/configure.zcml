@@ -50,6 +50,7 @@
 
   <include package=".subscribers" />
   <include package=".global_utilities" />
+  <include package=".services" />
 
 
   <utility
