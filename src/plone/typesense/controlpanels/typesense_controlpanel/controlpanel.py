@@ -173,6 +173,28 @@ class ITypesenseControlpanel(Interface):
         readonly=False,
     )
 
+    synonyms = schema.Text(
+        title=_("Synonyms"),
+        description=_(
+            "Configure synonym rules, one per line. "
+            "Multi-way: word1, word2, word3. "
+            "One-way: root => synonym1, synonym2. "
+            "Lines starting with # are comments."
+        ),
+        required=False,
+        default="",
+    )
+
+    search_api_key = schema.TextLine(
+        title=_("Typesense Search-only API key"),
+        description=_(
+            "A search-only API key used for generating scoped search tokens. "
+            "Create one in Typesense with only search permissions."
+        ),
+        default="",
+        required=False,
+    )
+
 
 class TypesenseControlpanel(RegistryEditForm):
     schema = ITypesenseControlpanel
@@ -226,6 +248,36 @@ class TypesenseControlpanel(RegistryEditForm):
             status = f"Typesense error:\n{e}"
 
         IStatusMessage(self.request).addStatusMessage(status, "info")
+        self.request.response.redirect(self.request.getURL())
+
+    @button.buttonAndHandler(_("Sync Synonyms"), name="sync_synonyms")
+    def handle_sync_synonyms(self, action):
+        """Sync synonym rules to Typesense."""
+        from plone.typesense.synonyms import parse_synonyms, sync_synonyms
+
+        saved = self.save()
+        if saved is False:
+            return
+
+        synonyms_text = api.portal.get_registry_record(
+            "plone.typesense.typesense_controlpanel.synonyms"
+        )
+        synonym_rules = parse_synonyms(synonyms_text)
+
+        ts_connector = getUtility(ITypesenseConnector)
+        ts_client = ts_connector.get_client()
+        collection_name = ts_connector.collection_base_name
+
+        upserted, errors = sync_synonyms(ts_client, collection_name, synonym_rules)
+
+        if errors:
+            status = f"Synced {upserted} synonyms with {len(errors)} error(s): {'; '.join(errors)}"
+            msg_type = "warning"
+        else:
+            status = f"Successfully synced {upserted} synonym rule(s) to Typesense."
+            msg_type = "info"
+
+        IStatusMessage(self.request).addStatusMessage(status, msg_type)
         self.request.response.redirect(self.request.getURL())
 
     @button.buttonAndHandler(_("clear and rebuild"), name="clear_and_rebuild")

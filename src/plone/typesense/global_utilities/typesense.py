@@ -204,6 +204,16 @@ class TypesenseConnector:
         ts.collections[collection_name].delete()
         self.init_collection()
 
+    def sync_synonyms(self, synonym_rules: list) -> tuple:
+        """Sync synonym rules to the current collection.
+
+        :param synonym_rules: list of synonym dicts from parse_synonyms()
+        :returns: tuple of (upserted_count, errors)
+        """
+        from plone.typesense.synonyms import sync_synonyms
+        ts = self.get_client()
+        return sync_synonyms(ts, self.collection_base_name, synonym_rules)
+
     def init_collection(self) -> None:
         ts = self.get_client()
         try:
