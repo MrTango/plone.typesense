@@ -92,6 +92,79 @@ def BrainFactory(manager):
     return factory
 
 
+class FacetResult:
+    """Container for search results with facet/aggregation data.
+
+    Attributes
+    ----------
+    results : LazyMap
+        The search result brains.
+    facet_counts : dict
+        Facet counts keyed by field name.  Each value is a list of
+        ``{"value": str, "count": int}`` dicts as returned by Typesense,
+        normalized for easy consumption.
+    count : int
+        Total number of matching documents.
+    """
+
+    def __init__(self, results, facet_counts, count):
+        self.results = results
+        self.count = count
+        self._raw_facet_counts = facet_counts
+        self.facet_counts = self._normalize_facets(facet_counts)
+
+    @staticmethod
+    def _normalize_facets(raw_facet_counts):
+        """Normalize Typesense facet_counts into a simple dict.
+
+        Typesense returns::
+
+            [
+                {
+                    "field_name": "portal_type",
+                    "counts": [
+                        {"value": "Document", "count": 42},
+                        {"value": "News Item", "count": 7},
+                    ],
+                    "stats": {...},
+                },
+                ...
+            ]
+
+        This method transforms it to::
+
+            {
+                "portal_type": [
+                    {"value": "Document", "count": 42},
+                    {"value": "News Item", "count": 7},
+                ],
+                ...
+            }
+        """
+        if not raw_facet_counts:
+            return {}
+        result = {}
+        for facet in raw_facet_counts:
+            field_name = facet.get("field_name", "")
+            counts = facet.get("counts", [])
+            result[field_name] = [
+                {"value": c.get("value", ""), "count": c.get("count", 0)}
+                for c in counts
+            ]
+        return result
+
+    def get_facet_values(self, field_name):
+        """Get facet values for a specific field.
+
+        Returns a list of {"value": str, "count": int} dicts,
+        or an empty list if the field was not faceted.
+        """
+        return self.facet_counts.get(field_name, [])
+
+    def __len__(self):
+        return self.count
+
+
 class TypesenseResult:
     def __init__(self, manager, query, **query_params):
         assert "sort" not in query_params
@@ -108,10 +181,14 @@ class TypesenseResult:
         # but the start index of the bulk size for the
         # results it holds. This way we can skip around
         # for result data in a result object
-        result = manager._search(self.query, sort=self.sort, **query_params)["hits"]
+        raw_result = manager._search(self.query, sort=self.sort, **query_params)
+        result = raw_result["hits"]
         self.results = {0: result["hits"]}
         self.count = result["total"]["value"]
         self.query_params = query_params
+
+        # Store facet counts if present (populated by faceted_search)
+        self.facet_counts = raw_result.get("facet_counts", [])
 
     def __len__(self):
         return self.count

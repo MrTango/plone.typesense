@@ -2,7 +2,7 @@ from Products.CMFCore.indexing import processQueue
 from zope.interface import implementer
 from ZTUtils.Lazy import LazyMap
 from plone.typesense import interfaces, utils
-from plone.typesense.result import BrainFactory, TypesenseResult
+from plone.typesense.result import BrainFactory, FacetResult, TypesenseResult
 from DateTime import DateTime
 from Products.CMFPlone.CatalogTool import CatalogTool
 from plone import api
@@ -62,6 +62,54 @@ class TypesenseManager:
             value = False
         return value
 
+    @property
+    def highlight_start_tag(self):
+        """Opening tag for search result highlighting."""
+        try:
+            value = api.portal.get_registry_record(
+                "highlight_start_tag", interfaces.ITypesenseSettings, "<mark>"
+            )
+        except KeyError:
+            value = "<mark>"
+        return value
+
+    @property
+    def highlight_end_tag(self):
+        """Closing tag for search result highlighting."""
+        try:
+            value = api.portal.get_registry_record(
+                "highlight_end_tag", interfaces.ITypesenseSettings, "</mark>"
+            )
+        except KeyError:
+            value = "</mark>"
+        return value
+
+    @property
+    def highlight_fields(self):
+        """Fields to highlight in search results."""
+        try:
+            value = api.portal.get_registry_record(
+                "highlight_fields", interfaces.ITypesenseSettings, None
+            )
+        except KeyError:
+            value = None
+        return value or ["Title", "Description", "SearchableText"]
+
+    def _get_highlight_params(self):
+        """Build Typesense highlight search parameters from control panel settings.
+
+        Returns a dict of highlight-related search params, or empty dict
+        if highlighting is disabled.
+        """
+        if not self.highlight:
+            return {}
+        params = {
+            "highlight_fields": ",".join(self.highlight_fields),
+            "highlight_start_tag": self.highlight_start_tag,
+            "highlight_end_tag": self.highlight_end_tag,
+        }
+        return params
+
     def search(self, query: dict, factory=None, **query_params) -> LazyMap:
         """
         @param query: The Plone query
@@ -73,6 +121,41 @@ class TypesenseManager:
         factory = BrainFactory(self)
         result = TypesenseResult(self, query, **query_params)
         return LazyMap(factory, result, result.count)
+
+    def faceted_search(self, query, facet_fields, max_facet_values=10,
+                       **query_params):
+        """Execute a search with faceting and return results + facet counts.
+
+        Parameters
+        ----------
+        query : dict
+            The Plone-style query parameters.
+        facet_fields : list[str]
+            List of field names to facet on. These fields must have
+            ``facet: true`` in the Typesense schema.
+        max_facet_values : int
+            Maximum number of facet values to return per field.
+        **query_params :
+            Additional parameters passed to the search method.
+
+        Returns
+        -------
+        FacetResult
+            Object with ``.results`` (LazyMap) and ``.facet_counts`` (dict)
+            attributes.
+        """
+        query_params["facet_by"] = ",".join(facet_fields)
+        query_params["max_facet_values"] = max_facet_values
+
+        factory = BrainFactory(self)
+        result = TypesenseResult(self, query, **query_params)
+        lazy_results = LazyMap(factory, result, result.count)
+
+        return FacetResult(
+            results=lazy_results,
+            facet_counts=result.facet_counts,
+            count=result.count,
+        )
 
     def search_results(self, request=None, check_perms=False, **kw):
         # Make sure any pending index tasks have been processed
