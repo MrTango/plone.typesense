@@ -57,6 +57,7 @@
 
   <include package=".subscribers" />
   <include package=".global_utilities" />
+  <include package=".services" />
 
   <adapter
       for="zope.interface.Interface
