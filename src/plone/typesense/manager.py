@@ -62,6 +62,38 @@ class TypesenseManager:
             value = False
         return value
 
+    def generate_scoped_search_key(self, user=None):
+        """Generate a scoped search API key for the given user.
+
+        The key embeds the user's allowedRolesAndUsers as a filter,
+        enabling secure client-side search.
+
+        :param user: The user to generate the key for (defaults to current user)
+        :returns: scoped API key string, or None if not configured
+        """
+        from plone.typesense.scoped_search import generate_scoped_search_key
+
+        try:
+            search_api_key = api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.search_api_key"
+            )
+        except api.exc.InvalidParameterError:
+            search_api_key = None
+
+        if not search_api_key:
+            log.warning("No search API key configured for scoped key generation")
+            return None
+
+        try:
+            collection_name = api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.collection"
+            )
+        except api.exc.InvalidParameterError:
+            log.warning("No collection name configured")
+            return None
+
+        return generate_scoped_search_key(search_api_key, collection_name, user)
+
     def search(self, query: dict, factory=None, **query_params) -> LazyMap:
         """
         @param query: The Plone query
