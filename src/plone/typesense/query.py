@@ -1,35 +1,17 @@
-from plone.typesense import log
 from plone.typesense.indexes import TZCTextIndex
 from plone.typesense.indexes import get_index
 from plone.typesense.interfaces import IQueryAssembler
 from plone.typesense.utils import get_ts_only_indexes
 from zope.interface import implementer
 
-
-class MockIndex:
-    """Mock index for fields deleted from portal_catalog but still in Typesense."""
-
-    def __init__(self, index_id):
-        self.id = index_id
-        self._fieldname = index_id
-
-        if index_id == 'SearchableText':
-            self._indexed_attrs = ['Title', 'Description', 'text', 'body', 'id']
-        else:
-            self._indexed_attrs = None
-
-    def getIndexSourceNames(self):
-        if self._indexed_attrs:
-            return self._indexed_attrs
-        return [self.id]
-
-    def __repr__(self):
-        return f"<MockIndex {self.id}>"
+# Backward-compatible alias
+getIndex = get_index
 
 
 @implementer(IQueryAssembler)
 class QueryAssembler:
     def __init__(self, request, manager):
+        # self.es = manager
         self.catalog = manager.catalog
         self.request = request
 
@@ -46,6 +28,7 @@ class QueryAssembler:
         if sort:
             for sort_str in sort.split(","):
                 sort_on.append({sort_str: {"order": sort_order}})
+        sort_on.append("_score")
         if "b_size" in query:
             del query["b_size"]
         if "b_start" in query:
@@ -55,86 +38,166 @@ class QueryAssembler:
         return query, sort_on
 
     def __call__(self, dquery):
-        """Build Typesense search parameters from Plone query dict.
+        filters = []
+        matches = []
+        catalog = self.catalog._catalog
+        idxs = catalog.indexes.keys()
+        query = {"match_all": {}}
+        ts_only_indexes = get_ts_only_indexes()
+        for key, value in dquery.items():
+            if key not in idxs and key not in ts_only_indexes:
+                continue
+            index = get_index(catalog, key)
+            if index is None and key in ts_only_indexes:
+                # deleted index for plone performance but still need on TS
+                index = TZCTextIndex(catalog, key)
+            qq = index.get_query(key, value)
+            if qq is None:
+                continue
+            if index is not None and index.filter_query:
+                if isinstance(qq, list):
+                    filters.extend(qq)
+                else:
+                    filters.append(qq)
+            else:
+                if isinstance(qq, list):
+                    matches.extend(qq)
+                else:
+                    matches.append(qq)
+        if len(filters) == 0 and len(matches) == 0:
+            return query
+        query = {"bool": {}}
+        if len(filters) > 0:
+            query["bool"]["filter"] = filters
 
-        Returns dict with:
-        - 'q': search text
-        - 'query_by': fields to search in
-        - 'filter_by': filter expression
-        - 'sort_by': sorting expression
+        if len(matches) > 0:
+            query["bool"]["should"] = matches
+            query["bool"]["minimum_should_match"] = 1
+        return query
+
+
+class TypesenseQueryAssembler:
+    """Assembles Plone catalog queries into Typesense search parameters.
+
+    Unlike QueryAssembler which produces Elasticsearch-style dicts,
+    this assembler produces Typesense-native parameters:
+    - filter_by: string filters joined with &&
+    - q: the search query text
+    - query_by: comma-separated field names to search
+    - query_by_weights: comma-separated weights
+    - sort_by: Typesense sort string
+    """
+
+    def __init__(self, request, manager):
+        self.catalog = manager.catalog
+        self.request = request
+
+    def normalize(self, query):
+        """Extract and normalize sort parameters from the query.
+
+        Returns (query, sort_by_string).
         """
+        sort_parts = []
+        sort = query.pop("sort_on", None)
+        sort_order = query.pop("sort_order", "asc")
+        if sort_order in ("descending", "reverse", "desc"):
+            sort_order = "desc"
+        else:
+            sort_order = "asc"
+
+        if sort:
+            for sort_str in sort.split(","):
+                sort_parts.append(f"{sort_str}:{sort_order}")
+
+        # Default sort by text relevance score
+        sort_parts.append("_text_match:desc")
+
+        sort_by = ",".join(sort_parts)
+
+        # Remove pagination params (handled separately)
+        query.pop("b_size", None)
+        query.pop("b_start", None)
+        query.pop("sort_limit", None)
+
+        return query, sort_by
+
+    def __call__(self, dquery):
+        """Assemble a Typesense search parameter dict from a Plone query.
+
+        Returns a dict with keys like:
+        - 'q': search query text (default '*' for match-all)
+        - 'filter_by': combined filter string
+        - 'query_by': fields to search in
+        - 'query_by_weights': weights for query_by fields
+        - 'sort_by': sort specification
+        - 'infix': infix search mode
+        """
+        filter_parts = []
+        q_parts = []
+        query_by_fields = []
+        query_by_weights = []
+        infix_mode = None
+
         catalog = self.catalog._catalog
         idxs = catalog.indexes.keys()
         ts_only_indexes = get_ts_only_indexes()
 
-        # Collect filters and text queries separately
-        filters = []
-        text_query = None
-        query_by_fields = []
-
         for key, value in dquery.items():
-            # Skip fields that are part of other queries or don't belong in Typesense
-            # 'depth' is handled as part of path queries, not a separate field
-            if key in ['depth']:
-                continue
-
             if key not in idxs and key not in ts_only_indexes:
                 continue
 
             index = get_index(catalog, key)
             if index is None and key in ts_only_indexes:
-                # deleted index for plone performance but still need on TS
-                mock_index = MockIndex(key)
-                index = TZCTextIndex(catalog, mock_index)
-
+                index = TZCTextIndex(catalog, key)
             if index is None:
                 continue
 
-            # Check if this is a filter first (exact match preferred over text search)
-            if hasattr(index, 'get_typesense_filter'):
-                try:
-                    ts_filter = index.get_typesense_filter(key, value)
-                    if ts_filter:
-                        filters.append(ts_filter)
-                        log.debug(f"Added Typesense filter for {key}: {ts_filter}")
-                        # If we have a filter, skip the text query for this field
-                        continue
-                    else:
-                        log.debug(f"No filter returned for {key}={value}")
-                except Exception as e:
-                    log.error(f"Error getting Typesense filter for {key}: {e}", exc_info=True)
-                    raise
+            ts_params = index.get_ts_query(key, value)
+            if ts_params is None:
+                continue
 
-            # Check if this is a text search query (only if no filter was applied)
-            if hasattr(index, 'get_typesense_query'):
-                try:
-                    ts_query = index.get_typesense_query(key, value)
-                    if ts_query:
-                        # Text queries return {'q': '...', 'query_by': '...'}
-                        text_query = ts_query.get('q', text_query)
-                        if ts_query.get('query_by'):
-                            query_by_fields.append(ts_query['query_by'])
-                        log.debug(f"Added Typesense query for {key}: {ts_query}")
-                except Exception as e:
-                    log.error(f"Error getting Typesense query for {key}: {e}", exc_info=True)
-                    raise
+            # Collect filter_by parts
+            if "filter_by" in ts_params:
+                filter_parts.append(ts_params["filter_by"])
 
-        # Build Typesense search parameters
-        params = {}
+            # Collect query text
+            if "q" in ts_params:
+                q_parts.append(ts_params["q"])
 
-        # Add text search if present
-        if text_query:
-            params['q'] = text_query
-            params['query_by'] = ','.join(query_by_fields) if query_by_fields else 'SearchableText'
+            # Collect query_by fields and weights
+            if "query_by" in ts_params:
+                fields = ts_params["query_by"].split(",")
+                weights = (
+                    ts_params.get("query_by_weights", "")
+                    .split(",") if "query_by_weights" in ts_params else []
+                )
+                for i, field in enumerate(fields):
+                    if field not in query_by_fields:
+                        query_by_fields.append(field)
+                        weight = weights[i] if i < len(weights) else "1"
+                        query_by_weights.append(weight)
+
+            # Collect infix mode
+            if "infix" in ts_params:
+                infix_mode = ts_params["infix"]
+
+        # Build final search parameters
+        result = {}
+
+        if q_parts:
+            # Combine multiple query texts (rare, but handle it)
+            result["q"] = " ".join(q_parts)
         else:
-            # Typesense requires 'q' parameter, use '*' for match-all
-            params['q'] = '*'
+            result["q"] = "*"
 
-        # Add filters
-        if filters:
-            params['filter_by'] = ' && '.join(filters)
-            log.info(f"QueryAssembler: Combined filters list: {filters}")
-            log.info(f"QueryAssembler: Final filter_by string: {params['filter_by']}")
+        if filter_parts:
+            result["filter_by"] = " && ".join(filter_parts)
 
-        log.info(f"QueryAssembler: Generated Typesense params: {params}")
-        return params
+        if query_by_fields:
+            result["query_by"] = ",".join(query_by_fields)
+            result["query_by_weights"] = ",".join(query_by_weights)
+
+        if infix_mode:
+            result["infix"] = infix_mode
+
+        return result

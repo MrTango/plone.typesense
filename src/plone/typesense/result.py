@@ -1,7 +1,7 @@
 from Acquisition import aq_base
 from Acquisition import aq_get
 from Acquisition import aq_parent
-from plone.typesense import interfaces, log
+from plone.typesense import interfaces
 from plone.typesense.utils import get_brain_from_path
 from Products.ZCatalog.CatalogBrains import AbstractCatalogBrain
 from Products.ZCatalog.interfaces import ICatalogBrain
@@ -35,7 +35,7 @@ class TypesenseBrain:
 
     def getPath(self):
         """Get the physical path for this record"""
-        return self._record["path"]
+        return self._record["path"]["path"]
 
     def getURL(self, relative=0):
         """Generate a URL for this record"""
@@ -65,42 +65,104 @@ class TypesenseBrain:
 
 
 def BrainFactory(manager):
-    def factory(hit: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
-        """Convert Typesense hit to catalog brain.
-
-        @param hit: Typesense hit with 'document' containing indexed fields
-        """
+    def factory(result: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
         catalog = manager.catalog
         zcatalog = catalog._catalog
-
-        # Typesense returns hits with 'document' field containing the actual data
-        document = hit.get("document", {})
-        path = document.get("path", None)
-
+        path = result.get("fields", {}).get("path.path", None)
+        if type(path) in (list, tuple, set) and len(path) > 0:
+            path = path[0]
         if path:
             brain = get_brain_from_path(zcatalog, path)
             if not brain:
-                # Create TypesenseBrain from document data
-                brain = TypesenseBrain(record=document, catalog=catalog)
-
-            # Handle highlighting if enabled
-            try:
-                if manager.highlight and hit.get("highlight"):
-                    fragments = []
-                    fraglen = 0
-                    for idx, i in enumerate(hit["highlight"].get("SearchableText", [])):
-                        fraglen += len(i)
-                        if idx > 0 and fraglen > manager.highlight_threshold:
-                            break
-                        fragments.append(i)
-                    brain.Description = " ... ".join(fragments)
-            except Exception as e:
-                log.warning(f"Error in highlighting: {e}")
-
+                result = manager.get_record_by_path(path)
+                brain = TypesenseBrain(record=result, catalog=catalog)
+            if manager.highlight and result.get("highlight"):
+                fragments = []
+                fraglen = 0
+                for idx, i in enumerate(result["highlight"].get("SearchableText", [])):
+                    fraglen += len(i)
+                    if idx > 0 and fraglen > manager.highlight_threshold:
+                        break
+                    fragments.append(i)
+                brain["Description"] = " ... ".join(fragments)
             return brain
+        # We should handle cases where there is no path in the ES response
         return None
 
     return factory
+
+
+class FacetResult:
+    """Container for search results with facet/aggregation data.
+
+    Attributes
+    ----------
+    results : LazyMap
+        The search result brains.
+    facet_counts : dict
+        Facet counts keyed by field name.  Each value is a list of
+        ``{"value": str, "count": int}`` dicts as returned by Typesense,
+        normalized for easy consumption.
+    count : int
+        Total number of matching documents.
+    """
+
+    def __init__(self, results, facet_counts, count):
+        self.results = results
+        self.count = count
+        self._raw_facet_counts = facet_counts
+        self.facet_counts = self._normalize_facets(facet_counts)
+
+    @staticmethod
+    def _normalize_facets(raw_facet_counts):
+        """Normalize Typesense facet_counts into a simple dict.
+
+        Typesense returns::
+
+            [
+                {
+                    "field_name": "portal_type",
+                    "counts": [
+                        {"value": "Document", "count": 42},
+                        {"value": "News Item", "count": 7},
+                    ],
+                    "stats": {...},
+                },
+                ...
+            ]
+
+        This method transforms it to::
+
+            {
+                "portal_type": [
+                    {"value": "Document", "count": 42},
+                    {"value": "News Item", "count": 7},
+                ],
+                ...
+            }
+        """
+        if not raw_facet_counts:
+            return {}
+        result = {}
+        for facet in raw_facet_counts:
+            field_name = facet.get("field_name", "")
+            counts = facet.get("counts", [])
+            result[field_name] = [
+                {"value": c.get("value", ""), "count": c.get("count", 0)}
+                for c in counts
+            ]
+        return result
+
+    def get_facet_values(self, field_name):
+        """Get facet values for a specific field.
+
+        Returns a list of {"value": str, "count": int} dicts,
+        or an empty list if the field was not faceted.
+        """
+        return self.facet_counts.get(field_name, [])
+
+    def __len__(self):
+        return self.count
 
 
 class TypesenseResult:
@@ -116,13 +178,16 @@ class TypesenseResult:
         self.query = qassembler(dquery)
 
         # results are stored in a dictionary, keyed
-        # by the start index of the bulk size for the
+        # but the start index of the bulk size for the
         # results it holds. This way we can skip around
         # for result data in a result object
-        result = manager._search(self.query, sort=self.sort)
-        self.results = {0: result["hits"]}
-        self.count = result["found"]
+        raw_result = manager._search(self.query, sort=self.sort, **query_params)
+        self.results = {0: raw_result["hits"]}
+        self.count = raw_result["found"]
         self.query_params = query_params
+
+        # Store facet counts if present (populated by faceted_search)
+        self.facet_counts = raw_result.get("facet_counts", [])
 
     def __len__(self):
         return self.count
@@ -147,7 +212,7 @@ class TypesenseResult:
         bulk_size = self.bulk_size
         count = self.count
         if isinstance(key, slice):
-            return [self[i] for i in range(key.start or 0, key.stop or count)]
+            return [self[i] for i in range(key.start, key.stop)]
         if key + 1 > count:
             raise IndexError
         if key < 0 and abs(key) > count:
@@ -165,8 +230,7 @@ class TypesenseResult:
             else:
                 result_index = (key % bulk_size) - (bulk_size - (count % last_key))
         if result_key not in self.results:
-            result = self.manager._search(
-                self.query, sort=self.sort, start=start
-            )
-            self.results[result_key] = result["hits"]
+            self.results[result_key] = self.manager._search(
+                self.query, sort=self.sort, start=start, **self.query_params
+            )["hits"]
         return self.results[result_key][result_index]

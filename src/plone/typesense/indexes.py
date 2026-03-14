@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from html.parser import HTMLParser
+import time
 from Acquisition import aq_base, aq_parent
 from DateTime import DateTime
 from Missing import MV
@@ -15,20 +15,7 @@ from Products.PluginIndexes.UUIDIndex.UUIDIndex import UUIDIndex
 from Products.ZCTextIndex.ZCTextIndex import ZCTextIndex
 
 from plone.typesense import log
-
-
-class HTMLStripper(HTMLParser):
-    """Strip HTML tags and return plain text."""
-
-    def __init__(self):
-        super().__init__()
-        self.text_parts = []
-
-    def handle_data(self, data):
-        self.text_parts.append(data)
-
-    def get_data(self):
-        return ' '.join(self.text_parts)
+from plone.typesense.filters import TypesenseFilterBuilder
 
 
 def _one(val):
@@ -51,43 +38,6 @@ def _zdt(val):
     return val
 
 
-def _parse_value(value):
-    """Parse query value, converting string representations of lists/tuples into actual lists.
-
-    When query parameters come from HTTP requests or URLs, list values are often
-    passed as string representations like "['Document', 'News Item']".
-    This function detects and parses such strings back into Python lists.
-
-    Examples:
-        "['Document', 'News Item']" -> ['Document', 'News Item']
-        "('Document', 'News Item')" -> ['Document', 'News Item']
-        "Document" -> "Document" (unchanged)
-        ['Document', 'News Item'] -> ['Document', 'News Item'] (unchanged)
-
-    @param value: The value to parse
-    @return: Parsed value (list if string representation detected, otherwise unchanged)
-    """
-    if not isinstance(value, str):
-        return value
-
-    # Check if it looks like a list or tuple string representation
-    stripped = value.strip()
-    if (stripped.startswith('[') and stripped.endswith(']')) or \
-       (stripped.startswith('(') and stripped.endswith(')')):
-        try:
-            # Use ast.literal_eval for safe parsing (no code execution)
-            import ast
-            parsed = ast.literal_eval(stripped)
-            # literal_eval can return various types, make sure it's a sequence
-            if isinstance(parsed, (list, tuple)):
-                return list(parsed)  # Always return as list for consistency
-        except (ValueError, SyntaxError):
-            # If parsing fails, return original value
-            pass
-
-    return value
-
-
 def get_index(catalog, name):
     catalog = getattr(catalog, "_catalog", catalog)
     try:
@@ -98,6 +48,10 @@ def get_index(catalog, name):
     if index_type in INDEX_MAPPING:
         return INDEX_MAPPING[index_type](catalog, index)
     return None
+
+
+# Backward-compatible alias used by query.py
+getIndex = get_index
 
 
 class BaseIndex:
@@ -124,84 +78,92 @@ class BaseIndex:
             return None
         return value
 
-    def get_typesense_filter(self, name, value):
-        """Convert Plone query to Typesense filter_by syntax.
-
-        Returns a filter string like 'field:=value' or None if no filter.
-        """
-        return None
-
-    def get_typesense_query(self, name, value):
-        """Convert Plone query to Typesense query parameters (q, query_by).
-
-        Returns a dict with 'q' and 'query_by' or None.
-        """
-        return None
-
     def _normalize_query(self, value):
-        """Normalize query value from various formats."""
+        """Normalize a Plone catalog query value.
+
+        Handles dicts with 'query' key and extracts the actual value.
+        """
         if isinstance(value, dict):
-            return value.get('query', value)
+            return value.get("query", value)
         return value
+
+    def _detect_negation(self, value):
+        """Detect negation in query values.
+
+        Returns (is_negated, clean_value).
+        Plone uses 'not' key in query dicts or 'operator': 'not' patterns.
+        """
+        if isinstance(value, dict):
+            if value.get("not"):
+                return True, value.get("not")
+            if value.get("operator") == "not":
+                return True, value.get("query", value)
+            return False, value
+        return False, value
+
+    def get_ts_filter(self, name, value):
+        """Build a Typesense filter_by expression for this index.
+
+        Returns a filter string or None if this index contributes to
+        the query string (q) rather than filter_by.
+        """
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
+
+        if isinstance(normalized, (list, tuple)):
+            if negated:
+                fb.not_equals(name, list(normalized))
+            else:
+                fb.equals(name, list(normalized))
+        else:
+            if negated:
+                fb.not_equals(name, normalized)
+            else:
+                fb.equals(name, normalized)
+        return fb.build()
+
+    def get_ts_query(self, name, value):
+        """Return a dict with Typesense search parameters.
+
+        Keys may include:
+          - 'filter_by': a filter string fragment
+          - 'q': a query string (for text search indexes)
+          - 'query_by': fields to search in (for text search indexes)
+          - 'query_by_weights': weight per query_by field
+
+        This is the Typesense-native counterpart of get_query().
+        """
+        filter_str = self.get_ts_filter(name, value)
+        if filter_str:
+            return {"filter_by": filter_str}
+        return None
 
 
 class TKeywordIndex(BaseIndex):
     def extract(self, name, data):
         return data[name] or []
 
-    def get_typesense_filter(self, name, value):
-        """Convert keyword query to Typesense filter.
+    def get_ts_filter(self, name, value):
+        """Keywords support list matching and negation."""
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
 
-        Examples:
-          portal_type='Document' -> 'portal_type:=`Document`'
-          portal_type=['Document', 'News Item'] -> 'portal_type:[`Document`, `News Item`]'
-          portal_type={'query': ['Document', 'News Item'], 'operator': 'or'} -> 'portal_type:[`Document`, `News Item`]'
-
-        Handles string representations of lists from URL parameters:
-          portal_type="['Document', 'News Item']" -> 'portal_type:[`Document`, `News Item`]'
-
-        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
-        """
-        log.info(f"TKeywordIndex.get_typesense_filter CALLED: name={name}, value={value}, type={type(value)}")
-
-        # Normalize query - extract 'query' from dict if present
-        value = self._normalize_query(value)
-        log.info(f"TKeywordIndex after _normalize_query: value={value}, type={type(value)}")
-
-        # Parse string representations of lists/tuples into actual lists
-        # This handles cases where query params come from URLs like "?portal_type=['Document', 'News Item']"
-        value = _parse_value(value)
-        log.info(f"TKeywordIndex after _parse_value: value={value}, type={type(value)}")
-
-        if isinstance(value, (list, tuple, set)):
-            # Wrap ALL string values in backticks (Typesense filter syntax requirement)
-            escaped_values = [f'`{v}`' for v in value]
-            log.info(f"TKeywordIndex escaped_values list: {escaped_values}")
-            result = f"{name}:[{', '.join(escaped_values)}]"
-            log.info(f"TKeywordIndex RETURNING filter for list: {result}")
-            return result
+        if isinstance(normalized, (list, tuple, set)):
+            vals = list(normalized)
         else:
-            # Single value - exact match - wrap in backticks
-            result = f"{name}:=`{value}`"
-            log.info(f"TKeywordIndex RETURNING filter for single value: {result}")
-            return result
+            vals = [normalized]
+
+        if negated:
+            fb.not_equals(name, vals if len(vals) > 1 else vals[0])
+        else:
+            fb.equals(name, vals if len(vals) > 1 else vals[0])
+        return fb.build()
 
 
 class TFieldIndex(BaseIndex):
-    def get_typesense_filter(self, name, value):
-        """Convert field query to Typesense filter.
-
-        Examples:
-          Type='Document' -> 'Type:=`Document`'
-          Type={'query': 'Document'} -> 'Type:=`Document`'
-
-        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
-        """
-        # Normalize query - extract 'query' from dict if present
-        value = self._normalize_query(value)
-
-        # Wrap in backticks (Typesense filter syntax requirement)
-        return f"{name}:=`{value}`"
+    pass
 
 
 class TDateIndex(BaseIndex):
@@ -231,22 +193,41 @@ class TDateIndex(BaseIndex):
             return int(utcvalue.strftime("%s"))
         return value
 
-    def get_typesense_filter(self, name, value):
-        """Convert date query to Typesense filter.
+    def get_query(self, name, value):
+        range_ = value.get("range")
+        query = value.get("query")
+        if query is None:
+            return None
+        if range_ is None:
+            if type(query) in (list, tuple):
+                range_ = "min"
 
-        Examples:
-          created={'query': dt, 'range': 'min'} -> 'created:>=1234567890'
-          created={'query': dt, 'range': 'max'} -> 'created:<=1234567890'
-          created={'query': [dt1, dt2], 'range': 'min:max'} -> 'created:>=1234567890 && created:<=1234567899'
-        """
-        if isinstance(value, dict):
-            range_ = value.get("range")
-            query = value.get("query")
-        else:
-            # Simple date value
-            query = value
-            range_ = None
+        first = _zdt(_one(query)).ISO8601()
+        if range_ == "min":
+            return {"range": {name: {"gte": first}}}
+        if range_ == "max":
+            return {"range": {name: {"lte": first}}}
+        if (
+            range_ in ("min:max", "minmax")
+            and (type(query) in (list, tuple))
+            and len(query) == 2
+        ):
+            return {"range": {name: {"gte": first, "lte": _zdt(query[1]).ISO8601()}}}
+        return None
 
+    def get_ts_filter(self, name, value):
+        """Date index produces range filters for Typesense."""
+        if not isinstance(value, dict):
+            # Simple value — exact match as timestamp
+            fb = TypesenseFilterBuilder()
+            ts_val = self._to_timestamp(value)
+            if ts_val is not None:
+                fb.equals(name, ts_val)
+                return fb.build()
+            return None
+
+        range_ = value.get("range")
+        query = value.get("query")
         if query is None:
             return None
 
@@ -254,21 +235,36 @@ class TDateIndex(BaseIndex):
             if isinstance(query, (list, tuple)):
                 range_ = "min"
 
-        # Convert to timestamp
-        first_dt = _zdt(_one(query))
-        first_ts = int(first_dt.utcdatetime().strftime("%s"))
+        fb = TypesenseFilterBuilder()
+        first_ts = self._to_timestamp(_one(query))
+        if first_ts is None:
+            return None
 
         if range_ == "min":
-            return f"{name}:>={first_ts}"
-        if range_ == "max":
-            return f"{name}:<={first_ts}"
-        if range_ in ("min:max", "minmax") and isinstance(query, (list, tuple)) and len(query) == 2:
-            second_dt = _zdt(query[1])
-            second_ts = int(second_dt.utcdatetime().strftime("%s"))
-            return f"{name}:>={first_ts} && {name}:<={second_ts}"
+            fb.greater_equal(name, first_ts)
+        elif range_ == "max":
+            fb.less_equal(name, first_ts)
+        elif range_ in ("min:max", "minmax") and isinstance(query, (list, tuple)) and len(query) == 2:
+            second_ts = self._to_timestamp(query[1])
+            if second_ts is not None:
+                fb.range(name, first_ts, second_ts)
+            else:
+                fb.greater_equal(name, first_ts)
+        else:
+            fb.equals(name, first_ts)
 
-        # Default: exact match
-        return f"{name}:={first_ts}"
+        return fb.build() if fb else None
+
+    @staticmethod
+    def _to_timestamp(value):
+        """Convert a date-like value to a Unix timestamp integer."""
+        try:
+            dt = _zdt(value)
+            if isinstance(dt, DateTime):
+                return int(dt.utcdatetime().strftime("%s"))
+            return None
+        except Exception:
+            return None
 
     def extract(self, name, data):
         try:
@@ -284,207 +280,129 @@ class TZCTextIndex(BaseIndex):
         return {"type": "text", "index": True, "store": False}
 
     def get_value(self, obj):
-        """Extract indexable text value from object.
-
-        For SearchableText, this method manually extracts text from Title, Description,
-        and body text fields (like 'text') to ensure complete indexing. This is necessary
-        because IIndexer adapters may return cached data that doesn't include body text.
-
-        For other text indexes, it uses the standard extraction via getattr or IIndexer.
-        """
         try:
             fields = self.index._indexed_attrs
         except Exception:  # NOQA W0703
             fields = [self.index._fieldname]
-
         all_texts = []
         for attr in fields:
-            # For SearchableText, manually extract from object fields to ensure body text is included
-            if attr == 'SearchableText':
-                # Get the original object from wrapper if needed
-                original_obj = obj.object if hasattr(obj, 'object') else obj
-
-                # Build SearchableText from ID + Title + Description + body text
-                parts = []
-
-                # Get ID
-                if hasattr(original_obj, 'id'):
-                    parts.append(str(original_obj.id))
-
-                # Get Title
-                if hasattr(original_obj, 'Title'):
-                    title = original_obj.Title
-                    if safe_callable(title):
-                        title = title()
-                    if title:
-                        parts.append(str(title))
-
-                # Get Description
-                if hasattr(original_obj, 'Description'):
-                    desc = original_obj.Description
-                    if safe_callable(desc):
-                        desc = desc()
-                    if desc:
-                        parts.append(str(desc))
-
-                # Get body text from 'text' field (RichText for Documents)
-                if hasattr(original_obj, 'text') and original_obj.text:
-                    body = original_obj.text
-                    # Handle RichTextValue objects
-                    if hasattr(body, 'output'):
-                        body = body.output
-                    elif hasattr(body, 'raw'):
-                        body = body.raw
-                    # Strip HTML tags if present
-                    if isinstance(body, str) and ('<' in body or '>' in body):
-                        try:
-                            stripper = HTMLStripper()
-                            stripper.feed(body)
-                            body = stripper.get_data()
-                        except Exception:  # NOQA W0703
-                            pass
-
-                    if body:
-                        parts.append(str(body))
-
-                text = ' '.join(parts) if parts else None
-            else:
-                # For other indexes, use standard extraction
-                text = getattr(obj, attr, None)
-
-                # If getattr returned None, try to find an IIndexer adapter
-                if text is None:
-                    from zope.component import queryMultiAdapter
-                    from plone.indexer.interfaces import IIndexer
-                    from plone import api
-
-                    catalog = api.portal.get_tool("portal_catalog")
-                    indexer = queryMultiAdapter((obj, catalog), IIndexer, name=attr)
-                    if indexer:
-                        text = indexer()
-
+            text = getattr(obj, attr, None)
             if text is None:
                 continue
-
             if safe_callable(text):
                 text = text()
-
             if text is None:
                 continue
-
-            # Handle RichTextValue objects (from plone.app.textfield)
-            if hasattr(text, 'output'):
-                text = text.output
-            elif hasattr(text, 'raw'):
-                text = text.raw
-
-            # Strip HTML tags if present
-            if isinstance(text, str) and ('<' in text or '>' in text):
-                try:
-                    stripper = HTMLStripper()
-                    stripper.feed(text)
-                    text = stripper.get_data()
-                except Exception:  # NOQA W0703
-                    # If HTML parsing fails, use text as-is
-                    pass
-
             if text:
-                if isinstance(text, (list, tuple)):
+                if isinstance(
+                    text,
+                    (
+                        list,
+                        tuple,
+                    ),
+                ):
                     all_texts.extend(text)
                 else:
-                    all_texts.append(str(text))
-
-        # Check that we're sending only strings and filter empty strings
-        all_texts = [t for t in all_texts if isinstance(t, str) and t.strip()]
+                    all_texts.append(text)
+        # Check that we're sending only strings
+        all_texts = filter(lambda text: isinstance(text, str), all_texts)
         if all_texts:
             return "\n".join(all_texts)
         return None
 
-    def get_typesense_filter(self, name, value):
-        """Convert text field query to Typesense filter for exact matching.
-
-        Title and SearchableText should always use text search (get_typesense_query).
-        Other text fields can use exact match filters.
-
-        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
-        """
+    def get_query(self, name, value):
         value = self._normalize_query(value)
+        # ES doesn't care about * like zope catalog does
+        clean_value = value.strip("*") if value else ""
+        queries = [{"match_phrase": {name: {"query": clean_value, "slop": 2}}}]
+        if name in ("Title", "SearchableText"):
+            # titles have most importance... we override here...
+            queries.append(
+                {"match_phrase_prefix": {"Title": {"query": clean_value, "boost": 2}}}
+            )
+        if name != "Title":
+            queries.append({"match": {name: {"query": clean_value}}})
 
-        # Title and SearchableText should always use text search, never exact match
-        # This is because they have infix: true in the schema and are optimized for search
-        if name in ('SearchableText', 'Title', 'Description'):
-            return None  # Will fall through to get_typesense_query()
+        return queries
 
-        # Other text fields: if no wildcards, use exact match
-        if value and '*' not in value:
-            # Wrap in backticks (Typesense filter syntax requirement)
-            return f"{name}:=`{value}`"
-        return None
+    def get_ts_query(self, name, value):
+        """Produce Typesense search parameters for text search.
 
-    def get_typesense_query(self, name, value):
-        """Convert text search to Typesense query parameters.
-
-        Returns dict with 'q' (search text) and 'query_by' (fields to search).
-        Used for full-text search.
+        Supports:
+        - Phrase matching: quoted strings become exact phrase searches
+        - Boost for Title when searching SearchableText
+        - Negation via 'not' key in query dict
         """
-        value = self._normalize_query(value)
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
 
-        # For SearchableText, use the value as-is (it's a search term, not a filter)
-        # For other fields with wildcards, strip them
-        if name == "SearchableText":
-            clean_value = value if value else ""
+        if isinstance(normalized, str):
+            query_text = normalized
+        elif isinstance(normalized, (list, tuple)):
+            query_text = " ".join(str(v) for v in normalized)
         else:
-            # Strip wildcards - Typesense handles fuzzy/infix matching via schema
-            clean_value = value.strip("*") if value else ""
+            query_text = str(normalized)
 
-        if not clean_value:
+        # Strip wildcard characters (Plone uses * for prefix searches)
+        query_text = query_text.strip("*").strip()
+
+        if not query_text:
             return None
 
-        # Build query_by list - search in the requested field
-        query_by_fields = [name]
+        # If negated, use filter_by with != instead of query
+        if negated:
+            fb = TypesenseFilterBuilder()
+            fb.not_equals(name, query_text)
+            return {"filter_by": fb.build()}
 
-        # For SearchableText, also search Title with higher weight
-        if name == "SearchableText":
-            # query_by_fields = ["Title", "SearchableText"]
-            query_by_fields = ["SearchableText"]
+        result = {"q": query_text}
 
-        return {
-            'q': clean_value,
-            'query_by': ','.join(query_by_fields)
-        }
+        # Detect phrase matching: if the query is wrapped in quotes,
+        # keep it as a phrase (Typesense supports quoted phrases in q)
+        is_phrase = (
+            query_text.startswith('"') and query_text.endswith('"')
+        )
+
+        # Build query_by and weights based on the field
+        if name in ("Title", "SearchableText"):
+            # When searching Title or SearchableText, also search Title
+            # with a higher weight for boosting
+            if name == "SearchableText":
+                result["query_by"] = f"Title,{name}"
+                result["query_by_weights"] = "2,1"
+            else:
+                result["query_by"] = name
+                result["query_by_weights"] = "2"
+        else:
+            result["query_by"] = name
+
+        # Enable infix search for short queries (helps with partial matches)
+        if len(query_text) <= 3 and not is_phrase:
+            result["infix"] = "always"
+
+        return result
 
 
 class TBooleanIndex(BaseIndex):
     def create_mapping(self, name):
         return {"type": "boolean"}
 
-    def get_typesense_filter(self, name, value):
-        """Convert boolean query to Typesense filter.
+    def get_ts_filter(self, name, value):
+        """Boolean index filter for Typesense."""
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
 
-        Examples:
-          is_folderish=True -> 'is_folderish:=true'
-          is_folderish=False -> 'is_folderish:=false'
-          is_folderish={'query': True} -> 'is_folderish:=true'
-        """
-        # Normalize query - extract 'query' from dict if present
-        value = self._normalize_query(value)
-
-        bool_val = 'true' if value else 'false'
-        return f"{name}:={bool_val}"
+        bool_val = bool(normalized)
+        if negated:
+            fb.not_equals(name, bool_val)
+        else:
+            fb.equals(name, bool_val)
+        return fb.build()
 
 
 class TUUIDIndex(BaseIndex):
-    def get_typesense_filter(self, name, value):
-        """Convert UUID query to Typesense filter.
-
-        Examples:
-          UID='abc123' -> 'UID:=abc123'
-          UID={'query': 'abc123'} -> 'UID:=abc123'
-        """
-        # Normalize query - extract 'query' from dict if present
-        value = self._normalize_query(value)
-
-        return f"{name}:={value}"
+    pass
 
 
 class TExtendedPathIndex(BaseIndex):
@@ -518,56 +436,76 @@ class TExtendedPathIndex(BaseIndex):
         return "/".join(path)
 
     def extract(self, name, data):
-        return data[name]
+        return data[name]["path"]
 
-    def get_typesense_filter(self, name, value):
-        """Convert path query to Typesense filter.
-
-        Examples:
-          path='/folder' -> 'path:=`/folder*`'
-          path={'query': '/folder', 'depth': 0} -> 'path:=`/folder`'
-          path={'query': '/folder', 'depth': 1} -> 'path:=`/folder*`'
-          path={'query': ['/a', '/b']} -> 'path:=`/a*` || path:=`/b*`'
-
-        Note: ALL string values are wrapped in backticks as per Typesense filter syntax.
-        Note: depth filtering is ignored since Typesense doesn't have a depth field.
-              The path prefix matching provides sufficient filtering.
-        """
+    def get_query(self, name, value):
         if isinstance(value, str):
-            # Parse string representation of list if needed
-            parsed = _parse_value(value)
-            if isinstance(parsed, list):
-                paths = parsed
-                depth = -1
-            else:
-                paths = [parsed]
-                depth = -1
+            paths = value
+            depth = -1
+            navtree = False
+            navtree_start = 0
         else:
             depth = value.get("depth", -1)
             paths = value.get("query")
-            # Parse string representation if needed
-            paths = _parse_value(paths)
+            navtree = value.get("navtree", False)
+            navtree_start = value.get("navtree_start", 0)
+        if not paths:
+            return None
+        if isinstance(paths, str):
+            paths = [paths]
+        andfilters = []
+        for path in paths:
+            spath = path.split("/")
+            gtcompare = "gt"
+            start = len(spath) - 1
+            if navtree:
+                start = start + navtree_start
+                end = navtree_start + depth
+            else:
+                end = start + depth
+            if navtree or depth == -1:
+                gtcompare = "gte"
+            filters = []
+            if depth == 0:
+                andfilters.append(
+                    {"bool": {"filter": {"term": {f"{name}.path": path}}}}
+                )
+                continue
+            filters = [
+                {"prefix": {f"{name}.path": path}},
+                {"range": {f"{name}.depth": {gtcompare: start}}},
+            ]
+            if depth != -1:
+                filters.append({"range": {f"{name}.depth": {"lte": end}}})
+            andfilters.append({"bool": {"must": filters}})
+        if len(andfilters) > 1:
+            return {"bool": {"should": andfilters}}
+        return andfilters[0]
+
+    def get_ts_filter(self, name, value):
+        """Path filter for Typesense.
+
+        Typesense doesn't have nested path/depth objects, so we filter
+        on the path string field directly. For simple path queries this
+        means a prefix-style equality filter on the path string.
+        """
+        if isinstance(value, str):
+            paths = [value]
+        elif isinstance(value, dict):
+            paths = value.get("query")
             if isinstance(paths, str):
                 paths = [paths]
+        else:
+            return None
 
         if not paths:
             return None
 
-        # Build filter for each path
-        path_filters = []
+        fb = TypesenseFilterBuilder()
         for path in paths:
-            if depth == 0:
-                # Exact path match - wrap in backticks
-                path_filters.append(f"path:=`{path}`")
-            else:
-                # All descendants (depth ignored for Typesense) - wrap in backticks
-                # Use wildcard to match all paths starting with this prefix
-                path_filters.append(f"path:=`{path}*`")
+            fb.equals(name, path)
 
-        # Combine multiple paths with OR
-        if len(path_filters) > 1:
-            return '(' + ' || '.join(path_filters) + ')'
-        return path_filters[0]
+        return fb.build(join="||") if len(paths) > 1 else fb.build()
 
 
 class TGopipIndex(BaseIndex):
@@ -579,24 +517,6 @@ class TGopipIndex(BaseIndex):
         if hasattr(parent, "getObjectPosition"):
             return parent.getObjectPosition(obj.getId())
         return None
-
-    def get_typesense_filter(self, name, value):
-        """Convert gopip (position) query to Typesense filter.
-
-        Examples:
-          getObjPositionInParent=5 -> 'getObjPositionInParent:=5'
-          getObjPositionInParent={'query': 5, 'range': 'min'} -> 'getObjPositionInParent:>=5'
-        """
-        if isinstance(value, dict):
-            range_ = value.get("range")
-            query = value.get("query")
-            if range_ == "min":
-                return f"{name}:>={query}"
-            elif range_ == "max":
-                return f"{name}:<={query}"
-            else:
-                return f"{name}:={query}"
-        return f"{name}:={value}"
 
 
 class TDateRangeIndex(BaseIndex):
@@ -624,18 +544,28 @@ class TDateRangeIndex(BaseIndex):
             f"{self.index.id}2": until.strftime("%s"),
         }
 
-    def get_typesense_filter(self, name, value):
-        """Convert date range query to Typesense filter.
-
-        Checks if value falls within the range defined by two date fields.
-        Examples:
-          effective_range=DateTime() -> 'effective_range1:<=1234567890 && effective_range2:>=1234567890'
-        """
+    def get_query(self, name, value):
         value = self._normalize_query(value)
-        if isinstance(value, str):
-            value = DateTime(value)
-        timestamp = int(value.utcdatetime().strftime("%s"))
-        return f"{name}1:<={timestamp} && {name}2:>={timestamp}"
+        date_iso = value.ISO8601()
+        return [
+            {"range": {f"{name}.{name}1": {"lte": date_iso}}},
+            {"range": {f"{name}.{name}2": {"gte": date_iso}}},
+        ]
+
+    def get_ts_filter(self, name, value):
+        """Date range index for Typesense.
+
+        The 'since' field must be <= value and 'until' field >= value.
+        """
+        normalized = self._normalize_query(value)
+        ts_val = TDateIndex._to_timestamp(normalized)
+        if ts_val is None:
+            return None
+
+        fb = TypesenseFilterBuilder()
+        fb.less_equal(f"{name}1", ts_val)
+        fb.greater_equal(f"{name}2", ts_val)
+        return fb.build()
 
 
 class TRecurringIndex(TDateIndex):
@@ -660,6 +590,3 @@ try:
     INDEX_MAPPING[DateRecurringIndex] = TRecurringIndex
 except ImportError:
     pass
-
-
-

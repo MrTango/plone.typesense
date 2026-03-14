@@ -136,11 +136,45 @@ class ITypesenseControlpanel(Interface):
             u'Highlight',
         ),
         description=_(
-            u'',
+            u'Enable search result highlighting.',
         ),
         required=False,
         default=False,
         readonly=False,
+    )
+
+    highlight_start_tag = schema.TextLine(
+        title=_(u'Highlight start tag'),
+        description=_(
+            u'HTML tag used to wrap the start of highlighted text. '
+            u'Default: <mark>'
+        ),
+        required=False,
+        default=u'<mark>',
+        readonly=False,
+    )
+
+    highlight_end_tag = schema.TextLine(
+        title=_(u'Highlight end tag'),
+        description=_(
+            u'HTML tag used to wrap the end of highlighted text. '
+            u'Default: </mark>'
+        ),
+        required=False,
+        default=u'</mark>',
+        readonly=False,
+    )
+
+    highlight_fields = schema.List(
+        title=_(u'Highlight fields'),
+        description=_(
+            u'Fields to highlight in search results. '
+            u'One field name per line. '
+            u'Default: Title, Description, SearchableText'
+        ),
+        value_type=schema.TextLine(title=u'field'),
+        default=[u'Title', u'Description', u'SearchableText'],
+        required=False,
     )
 
     bulk_size = schema.Int(
