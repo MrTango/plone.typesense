@@ -33,4 +33,12 @@
     layer="plone.typesense.interfaces.IPloneTypesenseLayer"
     />
 
+  <browser:page
+    name="typesense-scoped-search-key"
+    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+    class=".scoped_search_key.ScopedSearchKeyView"
+    permission="zope2.View"
+    layer="plone.typesense.interfaces.IPloneTypesenseLayer"
+    />
+
 </configure>
