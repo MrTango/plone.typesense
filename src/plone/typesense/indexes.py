@@ -15,6 +15,7 @@ from Products.PluginIndexes.UUIDIndex.UUIDIndex import UUIDIndex
 from Products.ZCTextIndex.ZCTextIndex import ZCTextIndex
 
 from plone.typesense import log
+from plone.typesense.filters import TypesenseFilterBuilder
 
 
 def _one(val):
@@ -49,6 +50,10 @@ def get_index(catalog, name):
     return None
 
 
+# Backward-compatible alias used by query.py
+getIndex = get_index
+
+
 class BaseIndex:
     filter_query = True
 
@@ -73,10 +78,88 @@ class BaseIndex:
             return None
         return value
 
+    def _normalize_query(self, value):
+        """Normalize a Plone catalog query value.
+
+        Handles dicts with 'query' key and extracts the actual value.
+        """
+        if isinstance(value, dict):
+            return value.get("query", value)
+        return value
+
+    def _detect_negation(self, value):
+        """Detect negation in query values.
+
+        Returns (is_negated, clean_value).
+        Plone uses 'not' key in query dicts or 'operator': 'not' patterns.
+        """
+        if isinstance(value, dict):
+            if value.get("not"):
+                return True, value.get("not")
+            if value.get("operator") == "not":
+                return True, value.get("query", value)
+            return False, value
+        return False, value
+
+    def get_ts_filter(self, name, value):
+        """Build a Typesense filter_by expression for this index.
+
+        Returns a filter string or None if this index contributes to
+        the query string (q) rather than filter_by.
+        """
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
+
+        if isinstance(normalized, (list, tuple)):
+            if negated:
+                fb.not_equals(name, list(normalized))
+            else:
+                fb.equals(name, list(normalized))
+        else:
+            if negated:
+                fb.not_equals(name, normalized)
+            else:
+                fb.equals(name, normalized)
+        return fb.build()
+
+    def get_ts_query(self, name, value):
+        """Return a dict with Typesense search parameters.
+
+        Keys may include:
+          - 'filter_by': a filter string fragment
+          - 'q': a query string (for text search indexes)
+          - 'query_by': fields to search in (for text search indexes)
+          - 'query_by_weights': weight per query_by field
+
+        This is the Typesense-native counterpart of get_query().
+        """
+        filter_str = self.get_ts_filter(name, value)
+        if filter_str:
+            return {"filter_by": filter_str}
+        return None
+
 
 class TKeywordIndex(BaseIndex):
     def extract(self, name, data):
         return data[name] or []
+
+    def get_ts_filter(self, name, value):
+        """Keywords support list matching and negation."""
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
+
+        if isinstance(normalized, (list, tuple, set)):
+            vals = list(normalized)
+        else:
+            vals = [normalized]
+
+        if negated:
+            fb.not_equals(name, vals if len(vals) > 1 else vals[0])
+        else:
+            fb.equals(name, vals if len(vals) > 1 else vals[0])
+        return fb.build()
 
 
 class TFieldIndex(BaseIndex):
@@ -131,6 +214,57 @@ class TDateIndex(BaseIndex):
         ):
             return {"range": {name: {"gte": first, "lte": _zdt(query[1]).ISO8601()}}}
         return None
+
+    def get_ts_filter(self, name, value):
+        """Date index produces range filters for Typesense."""
+        if not isinstance(value, dict):
+            # Simple value — exact match as timestamp
+            fb = TypesenseFilterBuilder()
+            ts_val = self._to_timestamp(value)
+            if ts_val is not None:
+                fb.equals(name, ts_val)
+                return fb.build()
+            return None
+
+        range_ = value.get("range")
+        query = value.get("query")
+        if query is None:
+            return None
+
+        if range_ is None:
+            if isinstance(query, (list, tuple)):
+                range_ = "min"
+
+        fb = TypesenseFilterBuilder()
+        first_ts = self._to_timestamp(_one(query))
+        if first_ts is None:
+            return None
+
+        if range_ == "min":
+            fb.greater_equal(name, first_ts)
+        elif range_ == "max":
+            fb.less_equal(name, first_ts)
+        elif range_ in ("min:max", "minmax") and isinstance(query, (list, tuple)) and len(query) == 2:
+            second_ts = self._to_timestamp(query[1])
+            if second_ts is not None:
+                fb.range(name, first_ts, second_ts)
+            else:
+                fb.greater_equal(name, first_ts)
+        else:
+            fb.equals(name, first_ts)
+
+        return fb.build() if fb else None
+
+    @staticmethod
+    def _to_timestamp(value):
+        """Convert a date-like value to a Unix timestamp integer."""
+        try:
+            dt = _zdt(value)
+            if isinstance(dt, DateTime):
+                return int(dt.utcdatetime().strftime("%s"))
+            return None
+        except Exception:
+            return None
 
     def extract(self, name, data):
         try:
@@ -191,10 +325,80 @@ class TZCTextIndex(BaseIndex):
 
         return queries
 
+    def get_ts_query(self, name, value):
+        """Produce Typesense search parameters for text search.
+
+        Supports:
+        - Phrase matching: quoted strings become exact phrase searches
+        - Boost for Title when searching SearchableText
+        - Negation via 'not' key in query dict
+        """
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
+
+        if isinstance(normalized, str):
+            query_text = normalized
+        elif isinstance(normalized, (list, tuple)):
+            query_text = " ".join(str(v) for v in normalized)
+        else:
+            query_text = str(normalized)
+
+        # Strip wildcard characters (Plone uses * for prefix searches)
+        query_text = query_text.strip("*").strip()
+
+        if not query_text:
+            return None
+
+        # If negated, use filter_by with != instead of query
+        if negated:
+            fb = TypesenseFilterBuilder()
+            fb.not_equals(name, query_text)
+            return {"filter_by": fb.build()}
+
+        result = {"q": query_text}
+
+        # Detect phrase matching: if the query is wrapped in quotes,
+        # keep it as a phrase (Typesense supports quoted phrases in q)
+        is_phrase = (
+            query_text.startswith('"') and query_text.endswith('"')
+        )
+
+        # Build query_by and weights based on the field
+        if name in ("Title", "SearchableText"):
+            # When searching Title or SearchableText, also search Title
+            # with a higher weight for boosting
+            if name == "SearchableText":
+                result["query_by"] = f"Title,{name}"
+                result["query_by_weights"] = "2,1"
+            else:
+                result["query_by"] = name
+                result["query_by_weights"] = "2"
+        else:
+            result["query_by"] = name
+
+        # Enable infix search for short queries (helps with partial matches)
+        if len(query_text) <= 3 and not is_phrase:
+            result["infix"] = "always"
+
+        return result
+
 
 class TBooleanIndex(BaseIndex):
     def create_mapping(self, name):
         return {"type": "boolean"}
+
+    def get_ts_filter(self, name, value):
+        """Boolean index filter for Typesense."""
+        fb = TypesenseFilterBuilder()
+        negated, clean_value = self._detect_negation(value)
+        normalized = self._normalize_query(clean_value)
+
+        bool_val = bool(normalized)
+        if negated:
+            fb.not_equals(name, bool_val)
+        else:
+            fb.equals(name, bool_val)
+        return fb.build()
 
 
 class TUUIDIndex(BaseIndex):
@@ -278,6 +482,31 @@ class TExtendedPathIndex(BaseIndex):
             return {"bool": {"should": andfilters}}
         return andfilters[0]
 
+    def get_ts_filter(self, name, value):
+        """Path filter for Typesense.
+
+        Typesense doesn't have nested path/depth objects, so we filter
+        on the path string field directly. For simple path queries this
+        means a prefix-style equality filter on the path string.
+        """
+        if isinstance(value, str):
+            paths = [value]
+        elif isinstance(value, dict):
+            paths = value.get("query")
+            if isinstance(paths, str):
+                paths = [paths]
+        else:
+            return None
+
+        if not paths:
+            return None
+
+        fb = TypesenseFilterBuilder()
+        for path in paths:
+            fb.equals(name, path)
+
+        return fb.build(join="||") if len(paths) > 1 else fb.build()
+
 
 class TGopipIndex(BaseIndex):
     def create_mapping(self, name):
@@ -323,6 +552,21 @@ class TDateRangeIndex(BaseIndex):
             {"range": {f"{name}.{name}2": {"gte": date_iso}}},
         ]
 
+    def get_ts_filter(self, name, value):
+        """Date range index for Typesense.
+
+        The 'since' field must be <= value and 'until' field >= value.
+        """
+        normalized = self._normalize_query(value)
+        ts_val = TDateIndex._to_timestamp(normalized)
+        if ts_val is None:
+            return None
+
+        fb = TypesenseFilterBuilder()
+        fb.less_equal(f"{name}1", ts_val)
+        fb.greater_equal(f"{name}2", ts_val)
+        return fb.build()
+
 
 class TRecurringIndex(TDateIndex):
     pass
@@ -346,6 +590,3 @@ try:
     INDEX_MAPPING[DateRecurringIndex] = TRecurringIndex
 except ImportError:
     pass
-
-
-
