@@ -62,7 +62,6 @@ class TypesenseManager:
             value = False
         return value
 
-<<<<<<< HEAD
     @property
     def highlight_start_tag(self):
         """Opening tag for search result highlighting."""

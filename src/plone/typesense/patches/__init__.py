@@ -61,7 +61,6 @@ def unrestrictedSearchResults(self, REQUEST=None, **kw):
         return self._old_unrestrictedSearchResults(REQUEST, **kw)
 
 
-<<<<<<< HEAD
 def uncatalog_object(self, uid, *args, **kwargs):
     """Patched uncatalog_object that queues a Typesense delete.
 
