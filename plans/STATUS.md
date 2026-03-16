@@ -112,6 +112,9 @@ Full Elasticsearch-to-Typesense refactoring and dead code removal. 441 tests pas
 | Sprint 2 | Remove dict path fallback, create_mapping(), extract() methods | DONE |
 | Sprint 3 | Remove backward-compat aliases, dead imports, unused helpers | DONE |
 | Sprint 4 | Final audit, STATUS.md update, release preparation | DONE |
+| Sprint 5 | Dependency hardening, v1.0a2 release prep | DONE |
+| Sprint 6 | Fix admin views, plone.restapi dependency, catalog search bypass | DONE |
+| Sprint 7 | Fix search fallback bug, test isolation, remove legacy build files | DONE |
 
 ---
 

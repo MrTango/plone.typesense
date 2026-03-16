@@ -98,7 +98,11 @@ class TypesenseSync(BrowserView):
         indexed = 0
         batch = []
         for uid in missing_uids:
-            brains = catalog.unrestrictedSearchResults(UID=uid)
+            search = getattr(
+                catalog, "_old_searchResults",
+                catalog.searchResults,
+            )
+            brains = search(UID=uid)
             if not brains:
                 continue
             brain = brains[0]

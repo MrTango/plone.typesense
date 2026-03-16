@@ -311,4 +311,9 @@ class TypesenseManager:
             if self.raise_search_exception is True:
                 raise
             log.error(f"Error running Query: {orig_query}", exc_info=True)
-            return self.catalog._old_searchResults(request, **kw)
+            fallback = (
+                self.catalog._old_searchResults
+                if check_perms
+                else self.catalog._old_unrestrictedSearchResults
+            )
+            return fallback(request, **kw)

@@ -23,6 +23,18 @@ Bug fixes:
 - Fix catalog patching to avoid conflicts with other catalog integrations.
   [MrTango]
 
+- Fix admin views (convert, sync, reindex) to bypass Typesense search
+  routing when enumerating catalog content, preventing empty results.
+  [MrTango]
+
+- Fix plone.restapi dependency: add to hard dependencies and make
+  ZCML/imports resilient for environments without it.
+  [MrTango]
+
+- Fix search error fallback to respect ``check_perms`` flag, preventing
+  silent permission filtering on unrestricted search errors.
+  [MrTango]
+
 New features:
 
 - Add TypesenseFilterBuilder for constructing validated ``filter_by`` strings
@@ -80,6 +92,9 @@ Internal:
 - Remove legacy Elasticsearch-style code: QueryAssembler, get_query() methods,
   getIndex aliases, dict path fallback, create_mapping(), extract() methods,
   and backward-compat aliases.
+  [MrTango]
+
+- Remove obsolete legacy CI workflow (buildout/tox) and build files.
   [MrTango]
 
 
