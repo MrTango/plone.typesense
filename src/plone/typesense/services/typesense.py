@@ -1,9 +1,63 @@
+import transaction
 from plone import api
 from plone.restapi.services import Service
 from plone.typesense import log
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
-from Products.CMFCore.interfaces import ICatalogAware
 from zope.component import getUtility
+
+
+def _reindex_all(ts_connector):
+    """Reindex all catalog content into Typesense using proper data extraction.
+
+    Shared helper used by both TypesenseConvert and TypesenseRebuild.
+    """
+    from plone.typesense.queueprocessor import IndexProcessor
+
+    processor = IndexProcessor()
+    catalog = api.portal.get_tool("portal_catalog")
+    brains = catalog.unrestrictedSearchResults()
+
+    bulk_size = 50
+    try:
+        bulk_size = api.portal.get_registry_record(
+            "plone.typesense.typesense_controlpanel.bulk_size"
+        )
+    except Exception:
+        pass
+
+    indexed = 0
+    batch = []
+
+    for brain in brains:
+        uid = brain.UID
+        if not uid:
+            continue
+        try:
+            data = processor.get_data(uid)
+            if data:
+                data["id"] = uid
+                batch.append(data)
+        except Exception as exc:
+            log.warning(f"Reindex: could not get data for UID {uid}: {exc}")
+            continue
+
+        if len(batch) >= bulk_size:
+            try:
+                ts_connector.index(batch)
+                indexed += len(batch)
+            except Exception as exc:
+                log.error(f"Reindex: error indexing batch: {exc}")
+            batch = []
+            transaction.savepoint(optimistic=True)
+
+    if batch:
+        try:
+            ts_connector.index(batch)
+            indexed += len(batch)
+        except Exception as exc:
+            log.error(f"Reindex: error indexing final batch: {exc}")
+
+    return indexed
 
 
 class TypesenseInfo(Service):
@@ -69,6 +123,53 @@ class TypesenseInfo(Service):
         return result
 
 
+class TypesenseExtractData(Service):
+    """GET @typesense-extractdata — extract indexable data for a given object."""
+
+    def reply(self):
+        uid = self.request.get("uid", "").strip()
+        if not uid:
+            self.request.response.setStatus(400)
+            return {
+                "error": {
+                    "type": "BadRequest",
+                    "message": "Missing required 'uid' query parameter.",
+                }
+            }
+
+        from plone.typesense.queueprocessor import IndexProcessor
+
+        processor = IndexProcessor()
+        try:
+            data = processor.get_data(uid)
+        except Exception as e:
+            log.exception(f"Error extracting data for UID {uid}")
+            self.request.response.setStatus(500)
+            return {
+                "error": {
+                    "type": "InternalServerError",
+                    "message": str(e),
+                }
+            }
+
+        if not data:
+            self.request.response.setStatus(404)
+            return {
+                "error": {
+                    "type": "NotFound",
+                    "message": f"No data could be extracted for UID '{uid}'. "
+                    "Object may not exist or has no indexable data.",
+                }
+            }
+
+        data["id"] = uid
+        return {
+            "@id": f"{self.context.absolute_url()}/@typesense-extractdata",
+            "uid": uid,
+            "data": data,
+        }
+
+
 class TypesenseConvert(Service):
     """POST @typesense-convert — clear and recreate collection, then reindex."""
 
@@ -90,7 +191,7 @@ class TypesenseConvert(Service):
             log.info("Collection cleared and recreated for conversion.")
 
             # Reindex all content
-            indexed_count = self._reindex_all(ts_connector)
+            indexed_count = _reindex_all(ts_connector)
 
             return {
                 "@id": f"{self.context.absolute_url()}/@typesense-convert",
@@ -107,32 +208,6 @@ class TypesenseConvert(Service):
                     "message": str(e),
                 }
             }
-
-    def _reindex_all(self, ts_connector):
-        """Reindex all catalog-aware content into Typesense."""
-        portal = api.portal.get()
-        objects = []
-        batch_size = 100
-        count = 0
-
-        def _index_object(obj, path):
-            nonlocal count
-            if not ICatalogAware.providedBy(obj):
-                return
-            objects.append(obj)
-            if len(objects) >= batch_size:
-                ts_connector.index(objects)
-                count += len(objects)
-                objects.clear()
-
-        portal.ZopeFindAndApply(portal, search_sub=True, apply_func=_index_object)
-
-        # Index remaining objects
-        if objects:
-            ts_connector.index(objects)
-            count += len(objects)
-
-        return count
 
 
 class TypesenseRebuild(Service):
@@ -151,36 +226,13 @@ class TypesenseRebuild(Service):
             }
 
         try:
-            # Reindex all content without clearing first
-            portal = api.portal.get()
-            objects = []
-            batch_size = 100
-            count = 0
-
-            def _index_object(obj, path):
-                nonlocal count
-                if not ICatalogAware.providedBy(obj):
-                    return
-                objects.append(obj)
-                if len(objects) >= batch_size:
-                    ts_connector.index(objects)
-                    count += len(objects)
-                    objects.clear()
-
-            portal.ZopeFindAndApply(
-                portal, search_sub=True, apply_func=_index_object
-            )
-
-            # Index remaining objects
-            if objects:
-                ts_connector.index(objects)
-                count += len(objects)
+            indexed_count = _reindex_all(ts_connector)
 
             return {
                 "@id": f"{self.context.absolute_url()}/@typesense-rebuild",
                 "status": "ok",
-                "message": f"Rebuild complete. {count} objects indexed.",
-                "indexed_count": count,
+                "message": f"Rebuild complete. {indexed_count} objects indexed.",
+                "indexed_count": indexed_count,
             }
         except Exception as e:
             log.exception("Error during typesense rebuild")
@@ -258,20 +310,28 @@ class TypesenseSync(Service):
 
             # Index missing documents
             if missing_uids:
-                objects = []
+                from plone.typesense.queueprocessor import IndexProcessor
+
+                processor = IndexProcessor()
+                batch = []
                 for uid in missing_uids:
-                    brains = catalog.unrestrictedSearchResults(UID=uid)
-                    if brains:
-                        obj = brains[0].getObject()
-                        if ICatalogAware.providedBy(obj):
-                            objects.append(obj)
-                            if len(objects) >= 100:
-                                ts_connector.index(objects)
-                                indexed_count += len(objects)
-                                objects.clear()
-                if objects:
-                    ts_connector.index(objects)
-                    indexed_count += len(objects)
+                    try:
+                        data = processor.get_data(uid)
+                        if data:
+                            data["id"] = uid
+                            batch.append(data)
+                    except Exception as exc:
+                        log.warning(
+                            f"Sync: could not get data for UID {uid}: {exc}"
+                        )
+                        continue
+                    if len(batch) >= 100:
+                        ts_connector.index(batch)
+                        indexed_count += len(batch)
+                        batch = []
+                if batch:
+                    ts_connector.index(batch)
+                    indexed_count += len(batch)
 
             # Delete orphaned documents
             if orphaned_ids:

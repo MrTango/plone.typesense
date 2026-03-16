@@ -8,6 +8,7 @@ from plone.app.testing import SITE_OWNER_PASSWORD
 from plone.typesense.testing import PLONE_TYPESENSE_FUNCTIONAL_TESTING
 from plone.typesense.testing import PLONE_TYPESENSE_INTEGRATION_TESTING
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
+from Products.CMFCore.interfaces import ICatalogAware
 from unittest import mock
 from zope.component import getUtility
 
@@ -122,6 +123,99 @@ class TestTypesenseInfoServiceIntegration(unittest.TestCase):
         self.assertIn("fields", result["collection"])
 
 
+class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
+    """Integration tests for the @typesense-extractdata GET endpoint."""
+
+    layer = PLONE_TYPESENSE_INTEGRATION_TESTING
+
+    def setUp(self):
+        self.portal = self.layer["portal"]
+        self.request = self.layer["request"]
+        setRoles(self.portal, TEST_USER_ID, ["Manager"])
+
+    def test_extractdata_returns_400_without_uid(self):
+        """Test that endpoint returns 400 when uid parameter is missing."""
+        from plone.typesense.services.typesense import TypesenseExtractData
+
+        service = TypesenseExtractData(self.portal, self.request)
+        result = service.reply()
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"]["type"], "BadRequest")
+
+    def test_extractdata_returns_404_for_nonexistent_uid(self):
+        """Test that endpoint returns 404 when object is not found."""
+        from plone.typesense.services.typesense import TypesenseExtractData
+
+        self.request.set("uid", "nonexistent-uid-12345")
+        service = TypesenseExtractData(self.portal, self.request)
+
+        with mock.patch(
+            "plone.typesense.services.typesense.IndexProcessor"
+        ) as MockProcessor:
+            MockProcessor.return_value.get_data.return_value = {}
+            result = service.reply()
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"]["type"], "NotFound")
+
+    def test_extractdata_returns_data_for_valid_uid(self):
+        """Test that endpoint returns extracted data for a valid UID."""
+        from plone.typesense.services.typesense import TypesenseExtractData
+
+        self.request.set("uid", "test-uid-123")
+        service = TypesenseExtractData(self.portal, self.request)
+
+        mock_data = {"Title": "Test Document", "Description": "A test"}
+
+        with mock.patch(
+            "plone.typesense.services.typesense.IndexProcessor"
+        ) as MockProcessor:
+            MockProcessor.return_value.get_data.return_value = mock_data
+            result = service.reply()
+
+        self.assertIn("data", result)
+        self.assertEqual(result["uid"], "test-uid-123")
+        self.assertEqual(result["data"]["Title"], "Test Document")
+        self.assertEqual(result["data"]["id"], "test-uid-123")
+
+    def test_extractdata_handles_processor_error(self):
+        """Test that endpoint handles errors from IndexProcessor gracefully."""
+        from plone.typesense.services.typesense import TypesenseExtractData
+
+        self.request.set("uid", "error-uid")
+        service = TypesenseExtractData(self.portal, self.request)
+
+        with mock.patch(
+            "plone.typesense.services.typesense.IndexProcessor"
+        ) as MockProcessor:
+            MockProcessor.return_value.get_data.side_effect = Exception(
+                "Processing error"
+            )
+            result = service.reply()
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"]["type"], "InternalServerError")
+
+    def test_extractdata_strips_whitespace_from_uid(self):
+        """Test that uid parameter whitespace is stripped."""
+        from plone.typesense.services.typesense import TypesenseExtractData
+
+        self.request.set("uid", "  test-uid-123  ")
+        service = TypesenseExtractData(self.portal, self.request)
+
+        mock_data = {"Title": "Test"}
+
+        with mock.patch(
+            "plone.typesense.services.typesense.IndexProcessor"
+        ) as MockProcessor:
+            MockProcessor.return_value.get_data.return_value = mock_data
+            result = service.reply()
+
+        MockProcessor.return_value.get_data.assert_called_once_with("test-uid-123")
+        self.assertEqual(result["uid"], "test-uid-123")
+
+
 class TestTypesenseConvertServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-convert POST endpoint."""
 
@@ -161,7 +255,9 @@ class TestTypesenseConvertServiceIntegration(unittest.TestCase):
             "plone.typesense.services.typesense.getUtility",
             return_value=mock_connector,
         ):
-            with mock.patch.object(service, "_reindex_all", return_value=10):
+            with mock.patch(
+                "plone.typesense.services.typesense._reindex_all", return_value=10
+            ):
                 result = service.reply()
 
         mock_connector.clear.assert_called_once()
@@ -185,6 +281,44 @@ class TestTypesenseConvertServiceIntegration(unittest.TestCase):
 
         self.assertIn("error", result)
         self.assertEqual(result["error"]["type"], "InternalServerError")
+
+    def test_convert_uses_index_processor(self):
+        """Test that convert uses IndexProcessor.get_data for proper extraction."""
+        from plone.typesense.services.typesense import TypesenseConvert
+
+        mock_connector = mock.MagicMock()
+        mock_connector.enabled = True
+
+        mock_brain = mock.MagicMock()
+        mock_brain.UID = "uid-1"
+
+        mock_catalog = mock.MagicMock()
+        mock_catalog.unrestrictedSearchResults.return_value = [mock_brain]
+
+        mock_data = {"Title": "Test", "Description": "Desc"}
+
+        service = TypesenseConvert(self.portal, self.request)
+        with mock.patch(
+            "plone.typesense.services.typesense.getUtility",
+            return_value=mock_connector,
+        ):
+            with mock.patch(
+                "plone.typesense.services.typesense.api.portal.get_tool",
+                return_value=mock_catalog,
+            ):
+                with mock.patch(
+                    "plone.typesense.services.typesense.IndexProcessor"
+                ) as MockProcessor:
+                    MockProcessor.return_value.get_data.return_value = mock_data
+                    result = service.reply()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["indexed_count"], 1)
+        MockProcessor.return_value.get_data.assert_called_once_with("uid-1")
+        # Verify that the connector received dicts, not raw objects
+        call_args = mock_connector.index.call_args[0][0]
+        self.assertIsInstance(call_args[0], dict)
+        self.assertEqual(call_args[0]["id"], "uid-1")
 
 
 class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
@@ -225,14 +359,13 @@ class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
             "plone.typesense.services.typesense.getUtility",
             return_value=mock_connector,
         ):
-            # Mock ZopeFindAndApply to not actually traverse
-            with mock.patch.object(
-                self.portal, "ZopeFindAndApply"
-            ) as mock_find:
+            with mock.patch(
+                "plone.typesense.services.typesense._reindex_all", return_value=5
+            ):
                 result = service.reply()
 
         self.assertEqual(result["status"], "ok")
-        self.assertIn("indexed_count", result)
+        self.assertEqual(result["indexed_count"], 5)
 
     def test_rebuild_handles_errors(self):
         """Test that rebuild endpoint handles errors gracefully."""
@@ -246,14 +379,154 @@ class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
             "plone.typesense.services.typesense.getUtility",
             return_value=mock_connector,
         ):
-            with mock.patch.object(
-                self.portal,
-                "ZopeFindAndApply",
-                side_effect=Exception("Traversal error"),
+            with mock.patch(
+                "plone.typesense.services.typesense._reindex_all",
+                side_effect=Exception("Reindex error"),
             ):
                 result = service.reply()
 
         self.assertIn("error", result)
+
+    def test_rebuild_uses_index_processor(self):
+        """Test that rebuild uses IndexProcessor.get_data for proper extraction."""
+        from plone.typesense.services.typesense import TypesenseRebuild
+
+        mock_connector = mock.MagicMock()
+        mock_connector.enabled = True
+
+        mock_brain = mock.MagicMock()
+        mock_brain.UID = "uid-1"
+
+        mock_catalog = mock.MagicMock()
+        mock_catalog.unrestrictedSearchResults.return_value = [mock_brain]
+
+        mock_data = {"Title": "Test"}
+
+        service = TypesenseRebuild(self.portal, self.request)
+        with mock.patch(
+            "plone.typesense.services.typesense.getUtility",
+            return_value=mock_connector,
+        ):
+            with mock.patch(
+                "plone.typesense.services.typesense.api.portal.get_tool",
+                return_value=mock_catalog,
+            ):
+                with mock.patch(
+                    "plone.typesense.services.typesense.IndexProcessor"
+                ) as MockProcessor:
+                    MockProcessor.return_value.get_data.return_value = mock_data
+                    result = service.reply()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["indexed_count"], 1)
+        # Verify dicts are passed, not raw objects
+        call_args = mock_connector.index.call_args[0][0]
+        self.assertIsInstance(call_args[0], dict)
+
+
+class TestReindexAllHelper(unittest.TestCase):
+    """Tests for the shared _reindex_all helper function."""
+
+    layer = PLONE_TYPESENSE_INTEGRATION_TESTING
+
+    def setUp(self):
+        self.portal = self.layer["portal"]
+        setRoles(self.portal, TEST_USER_ID, ["Manager"])
+
+    def test_reindex_all_skips_brains_without_uid(self):
+        """Brains with no UID should be skipped."""
+        from plone.typesense.services.typesense import _reindex_all
+
+        mock_connector = mock.MagicMock()
+        mock_brain_no_uid = mock.MagicMock()
+        mock_brain_no_uid.UID = None
+        mock_brain_valid = mock.MagicMock()
+        mock_brain_valid.UID = "uid-1"
+
+        mock_catalog = mock.MagicMock()
+        mock_catalog.unrestrictedSearchResults.return_value = [
+            mock_brain_no_uid,
+            mock_brain_valid,
+        ]
+
+        mock_data = {"Title": "Test"}
+
+        with mock.patch(
+            "plone.typesense.services.typesense.api.portal.get_tool",
+            return_value=mock_catalog,
+        ):
+            with mock.patch(
+                "plone.typesense.services.typesense.IndexProcessor"
+            ) as MockProcessor:
+                MockProcessor.return_value.get_data.return_value = mock_data
+                count = _reindex_all(mock_connector)
+
+        self.assertEqual(count, 1)
+        MockProcessor.return_value.get_data.assert_called_once_with("uid-1")
+
+    def test_reindex_all_handles_per_object_errors(self):
+        """Errors extracting individual objects should not abort the reindex."""
+        from plone.typesense.services.typesense import _reindex_all
+
+        mock_connector = mock.MagicMock()
+
+        mock_brain_1 = mock.MagicMock()
+        mock_brain_1.UID = "uid-1"
+        mock_brain_2 = mock.MagicMock()
+        mock_brain_2.UID = "uid-2"
+
+        mock_catalog = mock.MagicMock()
+        mock_catalog.unrestrictedSearchResults.return_value = [
+            mock_brain_1,
+            mock_brain_2,
+        ]
+
+        with mock.patch(
+            "plone.typesense.services.typesense.api.portal.get_tool",
+            return_value=mock_catalog,
+        ):
+            with mock.patch(
+                "plone.typesense.services.typesense.IndexProcessor"
+            ) as MockProcessor:
+                MockProcessor.return_value.get_data.side_effect = [
+                    Exception("bad object"),
+                    {"Title": "Good"},
+                ]
+                count = _reindex_all(mock_connector)
+
+        self.assertEqual(count, 1)
+
+    def test_reindex_all_handles_batch_errors(self):
+        """Errors in one batch should not abort subsequent batches."""
+        from plone.typesense.services.typesense import _reindex_all
+
+        mock_connector = mock.MagicMock()
+        # First call raises, second succeeds
+        mock_connector.index.side_effect = [Exception("batch error"), None]
+
+        # Create enough brains to fill 2 batches (bulk_size defaults to 50)
+        brains = []
+        for i in range(60):
+            brain = mock.MagicMock()
+            brain.UID = f"uid-{i}"
+            brains.append(brain)
+
+        mock_catalog = mock.MagicMock()
+        mock_catalog.unrestrictedSearchResults.return_value = brains
+
+        with mock.patch(
+            "plone.typesense.services.typesense.api.portal.get_tool",
+            return_value=mock_catalog,
+        ):
+            with mock.patch(
+                "plone.typesense.services.typesense.IndexProcessor"
+            ) as MockProcessor:
+                MockProcessor.return_value.get_data.return_value = {"Title": "Test"}
+                count = _reindex_all(mock_connector)
+
+        # First batch of 50 fails (count=0), second batch of 10 succeeds (count=10)
+        self.assertEqual(count, 10)
+        self.assertEqual(mock_connector.index.call_count, 2)
 
 
 class TestTypesenseSyncServiceIntegration(unittest.TestCase):
@@ -306,16 +579,13 @@ class TestTypesenseSyncServiceIntegration(unittest.TestCase):
         mock_brain_1.UID = "uid-1"
         mock_brain_2 = mock.MagicMock()
         mock_brain_2.UID = "uid-missing"
-        mock_brain_2_obj = mock.MagicMock()
-        ICatalogAware.providedBy = mock.MagicMock(return_value=True)
-        mock_brain_2.getObject.return_value = mock_brain_2_obj
 
-        mock_catalog.unrestrictedSearchResults.side_effect = [
-            # First call: get all UIDs
-            [mock_brain_1, mock_brain_2],
-            # Second call: look up missing UID
-            [mock_brain_2],
+        mock_catalog.unrestrictedSearchResults.return_value = [
+            mock_brain_1,
+            mock_brain_2,
         ]
+
+        mock_data = {"Title": "Missing doc"}
 
         service = TypesenseSync(self.portal, self.request)
         with mock.patch(
@@ -326,7 +596,11 @@ class TestTypesenseSyncServiceIntegration(unittest.TestCase):
                 "plone.typesense.services.typesense.api.portal.get_tool",
                 return_value=mock_catalog,
             ):
-                result = service.reply()
+                with mock.patch(
+                    "plone.typesense.services.typesense.IndexProcessor"
+                ) as MockProcessor:
+                    MockProcessor.return_value.get_data.return_value = mock_data
+                    result = service.reply()
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["catalog_count"], 2)

@@ -15,6 +15,15 @@
       />
 
   <plone:service
+      method="GET"
+      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+      factory=".typesense.TypesenseExtractData"
+      name="@typesense-extractdata"
+      permission="cmf.ManagePortal"
+      layer="plone.typesense.interfaces.IPloneTypesenseLayer"
+      />
+
+  <plone:service
       method="POST"
       for="Products.CMFPlone.interfaces.IPloneSiteRoot"
       factory=".typesense.TypesenseConvert"

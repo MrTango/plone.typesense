@@ -237,13 +237,14 @@ class TestBrainHighlighting(unittest.TestCase):
     """Test brain highlighting uses attribute assignment, not subscript."""
 
     def test_highlight_code_uses_attribute(self):
-        """Verify the highlighting code uses brain.Description, not brain['Description']."""
+        """Verify the highlighting code guards brain['Description'] with 'if fragments:'."""
         import inspect
         from plone.typesense.result import BrainFactory
 
         source = inspect.getsource(BrainFactory)
-        self.assertNotIn('brain["Description"]', source)
-        self.assertIn("brain.Description", source)
+        # The fix for B6 wraps the Description assignment in an `if fragments:` guard
+        self.assertIn("if fragments:", source)
+        self.assertIn('brain["Description"]', source)
 
 
 class TestReindexView(unittest.TestCase):

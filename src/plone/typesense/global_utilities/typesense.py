@@ -70,21 +70,51 @@ class TypesenseConnector:
 
     @property
     def get_host(self):
-        return api.portal.get_registry_record(
-            "plone.typesense.typesense_controlpanel.host"
-        )
+        try:
+            host = api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.host"
+            )
+            if host:
+                return host
+        except api.exc.InvalidParameterError as e:
+            log.warn(f"could not load Typesense host from registry: {e}")
+        env_host = os.environ.get("TYPESENSE_HOST")
+        if env_host:
+            log.info("Using Typesense host from TYPESENSE_HOST environment variable")
+            return env_host
+        return "localhost"
 
     @property
     def get_port(self):
-        return api.portal.get_registry_record(
-            "plone.typesense.typesense_controlpanel.port"
-        )
+        try:
+            port = api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.port"
+            )
+            if port:
+                return port
+        except api.exc.InvalidParameterError as e:
+            log.warn(f"could not load Typesense port from registry: {e}")
+        env_port = os.environ.get("TYPESENSE_PORT")
+        if env_port:
+            log.info("Using Typesense port from TYPESENSE_PORT environment variable")
+            return env_port
+        return "8108"
 
     @property
     def get_protocol(self):
-        return api.portal.get_registry_record(
-            "plone.typesense.typesense_controlpanel.protocol"
-        )
+        try:
+            protocol = api.portal.get_registry_record(
+                "plone.typesense.typesense_controlpanel.protocol"
+            )
+            if protocol:
+                return protocol
+        except api.exc.InvalidParameterError as e:
+            log.warn(f"could not load Typesense protocol from registry: {e}")
+        env_protocol = os.environ.get("TYPESENSE_PROTOCOL")
+        if env_protocol:
+            log.info("Using Typesense protocol from TYPESENSE_PROTOCOL environment variable")
+            return env_protocol
+        return "http"
 
     @property
     def get_ts_schema(self):

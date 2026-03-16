@@ -65,6 +65,165 @@ class TestEnvVarApiKeyFallback(unittest.TestCase):
             self.assertEqual(connector.get_api_key, "registry-key")
 
 
+class TestEnvVarHostFallback(unittest.TestCase):
+    """Test that host can be loaded from environment variable."""
+
+    layer = PLONE_TYPESENSE_INTEGRATION_TESTING
+
+    def setUp(self):
+        self.portal = self.layer["portal"]
+        setRoles(self.portal, TEST_USER_ID, ["Manager"])
+
+    def _get_connector(self):
+        from plone.typesense.global_utilities.typesense import ITypesenseConnector
+        from zope.component import getUtility
+
+        return getUtility(ITypesenseConnector)
+
+    def test_host_from_registry(self):
+        """When registry has a host, it should be used."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.host", "registry-host"
+        )
+        connector = self._get_connector()
+        self.assertEqual(connector.get_host, "registry-host")
+
+    def test_host_from_env_when_registry_empty(self):
+        """When registry host is empty, fall back to TYPESENSE_HOST env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.host", ""
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_HOST": "docker-host"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_host, "docker-host")
+
+    def test_host_defaults_to_localhost(self):
+        """When both registry and env var are empty, default to localhost."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.host", ""
+        )
+        env = os.environ.copy()
+        env.pop("TYPESENSE_HOST", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_host, "localhost")
+
+    def test_registry_host_takes_precedence_over_env(self):
+        """Registry host should take precedence over env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.host", "registry-host"
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_HOST": "env-host"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_host, "registry-host")
+
+
+class TestEnvVarPortFallback(unittest.TestCase):
+    """Test that port can be loaded from environment variable."""
+
+    layer = PLONE_TYPESENSE_INTEGRATION_TESTING
+
+    def setUp(self):
+        self.portal = self.layer["portal"]
+        setRoles(self.portal, TEST_USER_ID, ["Manager"])
+
+    def _get_connector(self):
+        from plone.typesense.global_utilities.typesense import ITypesenseConnector
+        from zope.component import getUtility
+
+        return getUtility(ITypesenseConnector)
+
+    def test_port_from_registry(self):
+        """When registry has a port, it should be used."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.port", "9108"
+        )
+        connector = self._get_connector()
+        self.assertEqual(connector.get_port, "9108")
+
+    def test_port_from_env_when_registry_empty(self):
+        """When registry port is empty, fall back to TYPESENSE_PORT env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.port", ""
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_PORT": "443"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_port, "443")
+
+    def test_port_defaults_to_8108(self):
+        """When both registry and env var are empty, default to 8108."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.port", ""
+        )
+        env = os.environ.copy()
+        env.pop("TYPESENSE_PORT", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_port, "8108")
+
+    def test_registry_port_takes_precedence_over_env(self):
+        """Registry port should take precedence over env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.port", "9108"
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_PORT": "443"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_port, "9108")
+
+
+class TestEnvVarProtocolFallback(unittest.TestCase):
+    """Test that protocol can be loaded from environment variable."""
+
+    layer = PLONE_TYPESENSE_INTEGRATION_TESTING
+
+    def setUp(self):
+        self.portal = self.layer["portal"]
+        setRoles(self.portal, TEST_USER_ID, ["Manager"])
+
+    def _get_connector(self):
+        from plone.typesense.global_utilities.typesense import ITypesenseConnector
+        from zope.component import getUtility
+
+        return getUtility(ITypesenseConnector)
+
+    def test_protocol_from_registry(self):
+        """When registry has a protocol, it should be used."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.protocol", "https"
+        )
+        connector = self._get_connector()
+        self.assertEqual(connector.get_protocol, "https")
+
+    def test_protocol_from_env_when_registry_empty(self):
+        """When registry protocol is empty, fall back to TYPESENSE_PROTOCOL env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.protocol", ""
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_PROTOCOL": "https"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_protocol, "https")
+
+    def test_protocol_defaults_to_http(self):
+        """When both registry and env var are empty, default to http."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.protocol", ""
+        )
+        env = os.environ.copy()
+        env.pop("TYPESENSE_PROTOCOL", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_protocol, "http")
+
+    def test_registry_protocol_takes_precedence_over_env(self):
+        """Registry protocol should take precedence over env var."""
+        api.portal.set_registry_record(
+            "plone.typesense.typesense_controlpanel.protocol", "https"
+        )
+        with mock.patch.dict(os.environ, {"TYPESENSE_PROTOCOL": "http"}):
+            connector = self._get_connector()
+            self.assertEqual(connector.get_protocol, "https")
+
+
 class TestMultiNodeSupport(unittest.TestCase):
     """Test multi-node configuration parsing."""
 

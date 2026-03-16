@@ -629,7 +629,7 @@ class TestPatchesZCML(unittest.TestCase):
             zcml_content = f.read()
 
         # All patches should preserve the original method
-        self.assertEqual(zcml_content.count('preserveOriginal="True"'), 6)
+        self.assertEqual(zcml_content.count('preserveOriginal="True"'), 7)
 
 
 if __name__ == "__main__":

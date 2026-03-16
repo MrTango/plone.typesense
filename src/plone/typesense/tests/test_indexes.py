@@ -67,27 +67,27 @@ class TestBaseIndexTsFilter(unittest.TestCase):
 
     def test_simple_equals(self):
         result = self.idx.get_ts_filter("portal_type", "Document")
-        self.assertEqual(result, "portal_type:=Document")
+        self.assertEqual(result, "portal_type:=`Document`")
 
     def test_list_equals(self):
         result = self.idx.get_ts_filter("portal_type", ["Document", "File"])
-        self.assertEqual(result, "portal_type:=[Document,File]")
+        self.assertEqual(result, "portal_type:[`Document`, `File`]")
 
     def test_negation(self):
         result = self.idx.get_ts_filter("portal_type", {"not": "Folder"})
-        self.assertEqual(result, "portal_type:!=Folder")
+        self.assertEqual(result, "portal_type:!=`Folder`")
 
     def test_negation_list(self):
         result = self.idx.get_ts_filter(
             "portal_type", {"not": ["Folder", "Collection"]}
         )
-        self.assertEqual(result, "portal_type:!=[Folder,Collection]")
+        self.assertEqual(result, "portal_type:!=[`Folder`, `Collection`]")
 
     def test_operator_not(self):
         result = self.idx.get_ts_filter(
             "portal_type", {"operator": "not", "query": "Folder"}
         )
-        self.assertEqual(result, "portal_type:!=Folder")
+        self.assertEqual(result, "portal_type:!=`Folder`")
 
 
 class TestBaseIndexTsQuery(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestBaseIndexTsQuery(unittest.TestCase):
     def test_returns_filter_by(self):
         result = self.idx.get_ts_query("review_state", "published")
         self.assertIn("filter_by", result)
-        self.assertEqual(result["filter_by"], "review_state:=published")
+        self.assertEqual(result["filter_by"], "review_state:=`published`")
 
 
 class TestTKeywordIndexTsFilter(unittest.TestCase):
@@ -110,21 +110,21 @@ class TestTKeywordIndexTsFilter(unittest.TestCase):
 
     def test_single_keyword(self):
         result = self.idx.get_ts_filter("Subject", "python")
-        self.assertEqual(result, "Subject:=python")
+        self.assertEqual(result, "Subject:=`python`")
 
     def test_multiple_keywords(self):
         result = self.idx.get_ts_filter("Subject", ["python", "plone"])
-        self.assertEqual(result, "Subject:=[python,plone]")
+        self.assertEqual(result, "Subject:[`python`, `plone`]")
 
     def test_negated_keyword(self):
         result = self.idx.get_ts_filter("Subject", {"not": "internal"})
-        self.assertEqual(result, "Subject:!=internal")
+        self.assertEqual(result, "Subject:!=`internal`")
 
     def test_negated_keywords_list(self):
         result = self.idx.get_ts_filter(
             "Subject", {"not": ["internal", "draft"]}
         )
-        self.assertEqual(result, "Subject:!=[internal,draft]")
+        self.assertEqual(result, "Subject:!=[`internal`, `draft`]")
 
 
 class TestTBooleanIndexTsFilter(unittest.TestCase):
@@ -253,13 +253,13 @@ class TestFieldIndexTsFilter(unittest.TestCase):
 
     def test_simple(self):
         result = self.idx.get_ts_filter("review_state", "published")
-        self.assertEqual(result, "review_state:=published")
+        self.assertEqual(result, "review_state:=`published`")
 
     def test_negation(self):
         result = self.idx.get_ts_filter(
             "review_state", {"not": "private"}
         )
-        self.assertEqual(result, "review_state:!=private")
+        self.assertEqual(result, "review_state:!=`private`")
 
 
 if __name__ == "__main__":

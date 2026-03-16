@@ -8,6 +8,27 @@ from zope.interface import implementer
 getIndex = get_index
 
 
+class MockIndex:
+    """Lightweight stand-in for a ZCTextIndex used in tests and fallback paths.
+
+    For ``SearchableText`` it returns the conventional set of searchable
+    attribute names; for any other field it simply returns the field name.
+    """
+
+    SEARCHABLE_TEXT_ATTRS = [
+        "Title", "Description", "text", "body", "id", "SearchableText",
+    ]
+
+    def __init__(self, name):
+        self.id = name
+        self._indexed_attrs = (
+            self.SEARCHABLE_TEXT_ATTRS if name == "SearchableText" else [name]
+        )
+
+    def getIndexSourceNames(self):
+        return list(self._indexed_attrs)
+
+
 @implementer(IQueryAssembler)
 class QueryAssembler:
     def __init__(self, request, manager):
@@ -76,6 +97,7 @@ class QueryAssembler:
         return query
 
 
+@implementer(IQueryAssembler)
 class TypesenseQueryAssembler:
     """Assembles Plone catalog queries into Typesense search parameters.
 

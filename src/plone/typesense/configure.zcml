@@ -82,7 +82,7 @@
       for="zope.interface.Interface
            plone.typesense.interfaces.ITypesenseManager"
       provides="plone.typesense.interfaces.IQueryAssembler"
-      factory=".query.QueryAssembler"
+      factory=".query.TypesenseQueryAssembler"
       />
 
   <utility

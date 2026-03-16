@@ -3,6 +3,12 @@
 import unittest
 from unittest.mock import MagicMock, patch, PropertyMock
 
+try:
+    import plone.restapi  # noqa: F401
+    HAS_RESTAPI = True
+except ImportError:
+    HAS_RESTAPI = False
+
 
 class TestHighlightParams(unittest.TestCase):
     """Test the _get_highlight_params method of TypesenseManager."""
@@ -65,6 +71,7 @@ class TestHighlightParams(unittest.TestCase):
         self.assertEqual(params["highlight_fields"], "SearchableText")
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestControlpanelHighlightFields(unittest.TestCase):
     """Test that highlight fields exist in the control panel schema."""
 

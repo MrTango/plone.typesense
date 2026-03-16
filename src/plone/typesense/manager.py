@@ -1,7 +1,9 @@
 from Products.CMFCore.indexing import processQueue
+from zope.component import getUtility
 from zope.interface import implementer
 from ZTUtils.Lazy import LazyMap
 from plone.typesense import interfaces, utils
+from plone.typesense.global_utilities.typesense import ITypesenseConnector
 from plone.typesense.result import BrainFactory, FacetResult, TypesenseResult
 from DateTime import DateTime
 from Products.CMFPlone.CatalogTool import CatalogTool
@@ -32,13 +34,63 @@ class TypesenseManager:
             value = False
         return value
 
-    # XXX
+    @property
+    def active(self):
+        """Check if Typesense is enabled and the server is reachable."""
+        if not self.enabled:
+            return False
+        try:
+            connector = getUtility(ITypesenseConnector)
+            client = connector.get_client()
+            return client.operations.is_healthy()
+        except Exception:
+            return False
+
+    @property
+    def collection_name(self):
+        """Return the configured Typesense collection name."""
+        connector = getUtility(ITypesenseConnector)
+        return connector.collection_base_name
+
+    @property
+    def raise_search_exception(self):
+        """Whether to re-raise search exceptions instead of falling back."""
+        try:
+            return api.portal.get_registry_record(
+                "raise_search_exception",
+                interfaces.ITypesenseSettings,
+                False,
+            )
+        except (KeyError, api.exc.InvalidParameterError):
+            return False
+
+    @property
+    def highlight_threshold(self):
+        """Max character length for highlight fragments."""
+        try:
+            value = api.portal.get_registry_record(
+                "highlight_threshold",
+                interfaces.ITypesenseSettings,
+                500,
+            )
+        except (KeyError, api.exc.InvalidParameterError):
+            value = 500
+        return value or 500
+
     def get_record_by_path(self, path: str) -> dict:
-        body = {"query": {"match": {"path.path": path}}}
-        results = self.connection.search(index=self.index_name, body=body)
-        hits = results.get("hits", {}).get("hits", [])
-        record = hits[0]["_source"] if hits else {}
-        return record
+        """Retrieve a document from Typesense by its path."""
+        try:
+            connector = getUtility(ITypesenseConnector)
+            client = connector.get_client()
+            results = client.collections[self.collection_name].documents.search(
+                {"q": "*", "filter_by": f"path:={path}"}
+            )
+            hits = results.get("hits", [])
+            if hits:
+                return hits[0].get("document", {})
+        except Exception:
+            log.debug(f"Could not retrieve record for path: {path}", exc_info=True)
+        return {}
 
     @property
     def bulk_size(self) -> int:

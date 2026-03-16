@@ -2,7 +2,7 @@
 """Integration tests for query assembly and filter generation."""
 import unittest
 from unittest.mock import patch
-from plone.typesense.query import QueryAssembler
+from plone.typesense.query import TypesenseQueryAssembler
 from Products.PluginIndexes.KeywordIndex.KeywordIndex import KeywordIndex
 
 
@@ -27,15 +27,15 @@ class MockManager:
         self.catalog = MockCatalog()
 
 
-class TestQueryAssemblyFilters(unittest.TestCase):
-    """Test that QueryAssembler correctly assembles filters from various query formats."""
+class TestTypesenseQueryAssemblyFilters(unittest.TestCase):
+    """Test that TypesenseQueryAssembler correctly assembles filters."""
 
     def setUp(self):
         """Set up test fixture."""
         self.manager = MockManager()
-        self.assembler = QueryAssembler(None, self.manager)
+        self.assembler = TypesenseQueryAssembler(None, self.manager)
         # Mock get_ts_only_indexes to avoid registry lookup
-        self.patcher = patch('plone.typesense.query.get_ts_only_indexes', return_value=[])
+        self.patcher = patch('plone.typesense.query.get_ts_only_indexes', return_value=set())
         self.patcher.start()
 
     def tearDown(self):
@@ -54,9 +54,6 @@ class TestQueryAssemblyFilters(unittest.TestCase):
         query = {'portal_type': ['Document', 'Folder', 'Link']}
         params = self.assembler(query)
         self.assertIn('filter_by', params)
-        # Check that it's NOT the wrong format
-        self.assertNotIn("['Document'", params['filter_by'])
-        # Check that it IS the correct format
         self.assertEqual(params['filter_by'], 'portal_type:[`Document`, `Folder`, `Link`]')
 
     def test_multiple_portal_types_with_spaces(self):
@@ -64,8 +61,10 @@ class TestQueryAssemblyFilters(unittest.TestCase):
         query = {'portal_type': ['Document', 'News Item', 'Collection']}
         params = self.assembler(query)
         self.assertIn('filter_by', params)
-        # Check that spaces are properly escaped with backticks
-        self.assertEqual(params['filter_by'], 'portal_type:[`Document`, `News Item`, `Collection`]')
+        self.assertEqual(
+            params['filter_by'],
+            'portal_type:[`Document`, `News Item`, `Collection`]'
+        )
 
     def test_dict_query_format(self):
         """Test query with dict format (Plone's extended query format)."""
@@ -77,7 +76,10 @@ class TestQueryAssemblyFilters(unittest.TestCase):
         }
         params = self.assembler(query)
         self.assertIn('filter_by', params)
-        self.assertEqual(params['filter_by'], 'portal_type:[`Document`, `News Item`, `Folder`]')
+        self.assertEqual(
+            params['filter_by'],
+            'portal_type:[`Document`, `News Item`, `Folder`]'
+        )
 
     def test_multiple_filters(self):
         """Test query with multiple filter fields."""
@@ -87,10 +89,38 @@ class TestQueryAssemblyFilters(unittest.TestCase):
         }
         params = self.assembler(query)
         self.assertIn('filter_by', params)
-        # Should contain both filters joined with &&
         self.assertIn('portal_type:[`Document`, `Folder`]', params['filter_by'])
         self.assertIn('review_state:=`published`', params['filter_by'])
         self.assertIn(' && ', params['filter_by'])
+
+    def test_empty_query_returns_match_all(self):
+        """Test empty query returns match-all."""
+        params = self.assembler({})
+        self.assertEqual(params['q'], '*')
+        self.assertNotIn('filter_by', params)
+
+    def test_unknown_index_ignored(self):
+        """Test that unknown index names are skipped."""
+        query = {'nonexistent_field': 'value'}
+        params = self.assembler(query)
+        self.assertEqual(params['q'], '*')
+        self.assertNotIn('filter_by', params)
+
+    def test_normalize_extracts_sort(self):
+        """Test normalize extracts sort params."""
+        query = {'portal_type': 'Document', 'sort_on': 'modified', 'sort_order': 'desc'}
+        normalized, sort_by = self.assembler.normalize(query)
+        self.assertNotIn('sort_on', normalized)
+        self.assertIn('modified:desc', sort_by)
+        self.assertIn('_text_match:desc', sort_by)
+
+    def test_normalize_removes_pagination(self):
+        """Test normalize removes pagination params."""
+        query = {'portal_type': 'Document', 'b_size': 10, 'b_start': 20, 'sort_limit': 100}
+        normalized, _ = self.assembler.normalize(query)
+        self.assertNotIn('b_size', normalized)
+        self.assertNotIn('b_start', normalized)
+        self.assertNotIn('sort_limit', normalized)
 
 
 if __name__ == '__main__':

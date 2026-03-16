@@ -3,13 +3,14 @@ from Products.ZCatalog import ZCatalog
 from Products.ZCatalog.CatalogBrains import AbstractCatalogBrain
 from zope.component import getUtility
 from plone.typesense import log
-from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import (
-    ITypesenseControlpanel,
-)
 
 
 def get_settings():
     """Return ITypesenseControlpanel values."""
+    from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import (
+        ITypesenseControlpanel,
+    )
+
     registry = getUtility(IRegistry)
     try:
         settings = registry.forInterface(ITypesenseControlpanel, check=False)

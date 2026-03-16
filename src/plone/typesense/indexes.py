@@ -14,8 +14,24 @@ from Products.PluginIndexes.util import safe_callable
 from Products.PluginIndexes.UUIDIndex.UUIDIndex import UUIDIndex
 from Products.ZCTextIndex.ZCTextIndex import ZCTextIndex
 
+from html.parser import HTMLParser
+
 from plone.typesense import log
 from plone.typesense.filters import TypesenseFilterBuilder
+
+
+class HTMLStripper(HTMLParser):
+    """Strip HTML tags, returning plain text."""
+
+    def __init__(self):
+        super().__init__()
+        self._pieces = []
+
+    def handle_data(self, data):
+        self._pieces.append(data)
+
+    def get_data(self):
+        return " ".join(self._pieces)
 
 
 def _one(val):
@@ -123,6 +139,10 @@ class BaseIndex:
                 fb.equals(name, normalized)
         return fb.build()
 
+    def get_typesense_filter(self, name, value):
+        """Backward-compatible alias for get_ts_filter."""
+        return self.get_ts_filter(name, value)
+
     def get_ts_query(self, name, value):
         """Return a dict with Typesense search parameters.
 
@@ -144,21 +164,53 @@ class TKeywordIndex(BaseIndex):
     def extract(self, name, data):
         return data[name] or []
 
+    @staticmethod
+    def _parse_string_collection(value):
+        """Parse a string that looks like a Python list/tuple literal.
+
+        Returns a list of strings if parseable, otherwise None.
+        """
+        import ast as _ast
+
+        if not isinstance(value, str):
+            return None
+        stripped = value.strip()
+        if (stripped.startswith("[") and stripped.endswith("]")) or \
+           (stripped.startswith("(") and stripped.endswith(")")):
+            try:
+                parsed = _ast.literal_eval(stripped)
+                if isinstance(parsed, (list, tuple)):
+                    return [str(v) for v in parsed]
+            except (ValueError, SyntaxError):
+                pass
+        return None
+
     def get_ts_filter(self, name, value):
         """Keywords support list matching and negation."""
         fb = TypesenseFilterBuilder()
         negated, clean_value = self._detect_negation(value)
         normalized = self._normalize_query(clean_value)
 
-        if isinstance(normalized, (list, tuple, set)):
+        # Handle string representations of lists/tuples
+        if isinstance(normalized, str):
+            parsed = self._parse_string_collection(normalized)
+            if parsed is not None:
+                normalized = parsed
+
+        # Keep original collection type — keyword indexes are array-typed
+        # so even single-item lists should use list syntax
+        is_collection = isinstance(normalized, (list, tuple, set))
+        if is_collection:
             vals = list(normalized)
         else:
             vals = [normalized]
 
+        # Use list format if the original input was a collection
+        filter_value = vals if is_collection else vals[0]
         if negated:
-            fb.not_equals(name, vals if len(vals) > 1 else vals[0])
+            fb.not_equals(name, filter_value)
         else:
-            fb.equals(name, vals if len(vals) > 1 else vals[0])
+            fb.equals(name, filter_value)
         return fb.build()
 
 

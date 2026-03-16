@@ -123,16 +123,17 @@ class TypesenseFilterBuilder:
             return "true" if value else "false"
         if isinstance(value, (int, float)):
             return str(value)
-        # String values — backtick-escape if they contain special chars
+        # String values — always backtick-wrap for safety
         s = str(value)
-        if any(ch in s for ch in (",", ":", "[", "]", "(", ")", "`", " ")):
-            return f"`{s}`"
-        return s
+        return f"`{s}`"
 
     def _format_match(self, field, operator, value):
         """Format an equality/inequality filter, handling lists."""
         self._validate_field(field)
         if isinstance(value, (list, tuple, set)):
             values = [self._escape(v) for v in value]
-            return f"{field}:{operator}[{','.join(values)}]"
+            joined = ", ".join(values)
+            if operator == "!=":
+                return f"{field}:!=[{joined}]"
+            return f"{field}:[{joined}]"
         return f"{field}:{operator}{self._escape(value)}"

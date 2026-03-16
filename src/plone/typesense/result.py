@@ -35,7 +35,11 @@ class TypesenseBrain:
 
     def getPath(self):
         """Get the physical path for this record"""
-        return self._record["path"]["path"]
+        path = self._record.get("path", "")
+        if isinstance(path, dict):
+            # Legacy ES-style nested format
+            return path.get("path", "")
+        return path
 
     def getURL(self, relative=0):
         """Generate a URL for this record"""
@@ -68,25 +72,29 @@ def BrainFactory(manager):
     def factory(result: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
         catalog = manager.catalog
         zcatalog = catalog._catalog
-        path = result.get("fields", {}).get("path.path", None)
+        document = result.get("document", {})
+        path = document.get("path", None)
         if type(path) in (list, tuple, set) and len(path) > 0:
             path = path[0]
         if path:
             brain = get_brain_from_path(zcatalog, path)
             if not brain:
-                result = manager.get_record_by_path(path)
-                brain = TypesenseBrain(record=result, catalog=catalog)
-            if manager.highlight and result.get("highlight"):
+                record = manager.get_record_by_path(path)
+                brain = TypesenseBrain(record=record, catalog=catalog)
+            if manager.highlight and result.get("highlights"):
                 fragments = []
                 fraglen = 0
-                for idx, i in enumerate(result["highlight"].get("SearchableText", [])):
-                    fraglen += len(i)
-                    if idx > 0 and fraglen > manager.highlight_threshold:
+                for hl in result["highlights"]:
+                    if hl.get("field") == "SearchableText":
+                        for snippet in hl.get("snippets", []):
+                            fraglen += len(snippet)
+                            if fragments and fraglen > manager.highlight_threshold:
+                                break
+                            fragments.append(snippet)
                         break
-                    fragments.append(i)
-                brain["Description"] = " ... ".join(fragments)
+                if fragments:
+                    brain["Description"] = " ... ".join(fragments)
             return brain
-        # We should handle cases where there is no path in the ES response
         return None
 
     return factory

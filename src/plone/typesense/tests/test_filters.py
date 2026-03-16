@@ -15,7 +15,7 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
 
     def test_equals_string(self):
         result = self.fb.equals("portal_type", "Document").build()
-        self.assertEqual(result, "portal_type:=Document")
+        self.assertEqual(result, "portal_type:=`Document`")
 
     def test_equals_integer(self):
         result = self.fb.equals("age", 42).build()
@@ -27,21 +27,21 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
 
     def test_equals_list(self):
         result = self.fb.equals("portal_type", ["Document", "News Item"]).build()
-        self.assertEqual(result, "portal_type:=[Document,`News Item`]")
+        self.assertEqual(result, "portal_type:[`Document`, `News Item`]")
 
     def test_equals_tuple(self):
         result = self.fb.equals("status", ("published", "private")).build()
-        self.assertEqual(result, "status:=[published,private]")
+        self.assertEqual(result, "status:[`published`, `private`]")
 
     # -- not_equals ----------------------------------------------------------
 
     def test_not_equals_string(self):
         result = self.fb.not_equals("portal_type", "Folder").build()
-        self.assertEqual(result, "portal_type:!=Folder")
+        self.assertEqual(result, "portal_type:!=`Folder`")
 
     def test_not_equals_list(self):
         result = self.fb.not_equals("status", ["draft", "private"]).build()
-        self.assertEqual(result, "status:!=[draft,private]")
+        self.assertEqual(result, "status:!=[`draft`, `private`]")
 
     # -- comparison operators ------------------------------------------------
 
@@ -88,7 +88,7 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
         )
         self.assertEqual(
             result,
-            "portal_type:=Document && review_state:=published",
+            "portal_type:=`Document` && review_state:=`published`",
         )
 
     def test_chaining_or(self):
@@ -100,7 +100,7 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
         )
         self.assertEqual(
             result,
-            "portal_type:=Document || portal_type:=`News Item`",
+            "portal_type:=`Document` || portal_type:=`News Item`",
         )
 
     def test_empty_build(self):
@@ -147,7 +147,7 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
 
     def test_valid_field_name_with_underscore(self):
         result = self.fb.equals("review_state", "published").build()
-        self.assertEqual(result, "review_state:=published")
+        self.assertEqual(result, "review_state:=`published`")
 
     # -- escaping ------------------------------------------------------------
 
@@ -172,8 +172,8 @@ class TestTypesenseFilterBuilder(unittest.TestCase):
         )
         self.assertEqual(
             result,
-            "portal_type:=[Document,File] && review_state:=published "
-            "&& modified:>1700000000 && Subject:!=internal",
+            "portal_type:[`Document`, `File`] && review_state:=`published` "
+            "&& modified:>1700000000 && Subject:!=`internal`",
         )
 
 
