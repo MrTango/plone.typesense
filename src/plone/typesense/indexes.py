@@ -1,5 +1,5 @@
 from datetime import date, datetime
-import time
+
 from Acquisition import aq_base, aq_parent
 from DateTime import DateTime
 from Missing import MV
@@ -135,10 +135,6 @@ class BaseIndex:
                 fb.equals(name, normalized)
         return fb.build()
 
-    def get_typesense_filter(self, name, value):
-        """Backward-compatible alias for get_ts_filter."""
-        return self.get_ts_filter(name, value)
-
     def get_ts_query(self, name, value):
         """Return a dict with Typesense search parameters.
 
@@ -156,9 +152,6 @@ class BaseIndex:
 
 
 class TKeywordIndex(BaseIndex):
-    def extract(self, name, data):
-        return data[name] or []
-
     @staticmethod
     def _parse_string_collection(value):
         """Parse a string that looks like a Python list/tuple literal.
@@ -218,9 +211,6 @@ class TDateIndex(BaseIndex):
     """
 
     missing_date = DateTime("1900/01/01")
-
-    def create_mapping(self, name):
-        return {"type": "date", "store": True}
 
     def get_value(self, obj):
         value = super().get_value(obj)
@@ -291,18 +281,10 @@ class TDateIndex(BaseIndex):
         except Exception:
             return None
 
-    def extract(self, name, data):
-        try:
-            return DateTime(super().extract(name, data))
-        except Exception:  # NOQA W0703
-            return None
 
 
 class TZCTextIndex(BaseIndex):
     filter_query = False
-
-    def create_mapping(self, name):
-        return {"type": "text", "index": True, "store": False}
 
     def get_value(self, obj):
         try:
@@ -394,9 +376,6 @@ class TZCTextIndex(BaseIndex):
 
 
 class TBooleanIndex(BaseIndex):
-    def create_mapping(self, name):
-        return {"type": "boolean"}
-
     def get_ts_filter(self, name, value):
         """Boolean index filter for Typesense."""
         fb = TypesenseFilterBuilder()
@@ -418,14 +397,6 @@ class TUUIDIndex(BaseIndex):
 class TExtendedPathIndex(BaseIndex):
     filter_query = True
 
-    def create_mapping(self, name):
-        return {
-            "properties": {
-                "path": {"type": "keyword", "index": True, "store": True},
-                "depth": {"type": "integer", "store": True},
-            }
-        }
-
     def get_value(self, obj):
         attrs = self.index.indexed_attrs
         index = self.index.id if attrs is None else attrs[0]
@@ -444,9 +415,6 @@ class TExtendedPathIndex(BaseIndex):
             except AttributeError:
                 return None
         return "/".join(path)
-
-    def extract(self, name, data):
-        return data[name]["path"]
 
     def get_ts_filter(self, name, value):
         """Path filter for Typesense.
@@ -475,9 +443,6 @@ class TExtendedPathIndex(BaseIndex):
 
 
 class TGopipIndex(BaseIndex):
-    def create_mapping(self, name):
-        return {"type": "integer", "store": True}
-
     def get_value(self, obj):
         parent = aq_parent(obj)
         if hasattr(parent, "getObjectPosition"):
@@ -486,14 +451,6 @@ class TGopipIndex(BaseIndex):
 
 
 class TDateRangeIndex(BaseIndex):
-    def create_mapping(self, name):
-        return {
-            "properties": {
-                f"{name}1": {"type": "date", "store": True},
-                f"{name}2": {"type": "date", "store": True},
-            }
-        }
-
     def get_value(self, obj):
         if self.index._since_field is None:
             return None

@@ -135,6 +135,3 @@ class IndexingActions:
             if action_data:
                 all_data.extend([(action, uuid, data) for uuid, data in action_data])
         return all_data
-
-    # def all_blob_actions(self):
-    #     return [(uuid, data) for uuid, data in getattr(self, "index_blobs", {}).items()]
