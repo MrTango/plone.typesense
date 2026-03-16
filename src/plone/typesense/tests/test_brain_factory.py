@@ -19,10 +19,6 @@ class TestTypesenseBrain(unittest.TestCase):
         brain = TypesenseBrain({"path": "/plone/doc1"}, MagicMock())
         self.assertEqual(brain.getPath(), "/plone/doc1")
 
-    def test_getPath_nested_dict_fallback(self):
-        brain = TypesenseBrain({"path": {"path": "/plone/doc1"}}, MagicMock())
-        self.assertEqual(brain.getPath(), "/plone/doc1")
-
     def test_getattr_returns_record_value(self):
         brain = TypesenseBrain({"Title": "My Doc", "path": "/p"}, MagicMock())
         self.assertEqual(brain.Title, "My Doc")

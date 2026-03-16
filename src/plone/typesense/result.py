@@ -35,11 +35,7 @@ class TypesenseBrain:
 
     def getPath(self):
         """Get the physical path for this record"""
-        path = self._record.get("path", "")
-        if isinstance(path, dict):
-            # Legacy ES-style nested format
-            return path.get("path", "")
-        return path
+        return self._record.get("path", "")
 
     def getURL(self, relative=0):
         """Generate a URL for this record"""

@@ -66,10 +66,6 @@ def get_index(catalog, name):
     return None
 
 
-# Backward-compatible alias used by query.py
-getIndex = get_index
-
-
 class BaseIndex:
     filter_query = True
 
@@ -152,7 +148,6 @@ class BaseIndex:
           - 'query_by': fields to search in (for text search indexes)
           - 'query_by_weights': weight per query_by field
 
-        This is the Typesense-native counterpart of get_query().
         """
         filter_str = self.get_ts_filter(name, value)
         if filter_str:
@@ -244,28 +239,6 @@ class TDateIndex(BaseIndex):
             utcvalue = value.utcdatetime()
             return int(utcvalue.strftime("%s"))
         return value
-
-    def get_query(self, name, value):
-        range_ = value.get("range")
-        query = value.get("query")
-        if query is None:
-            return None
-        if range_ is None:
-            if type(query) in (list, tuple):
-                range_ = "min"
-
-        first = _zdt(_one(query)).ISO8601()
-        if range_ == "min":
-            return {"range": {name: {"gte": first}}}
-        if range_ == "max":
-            return {"range": {name: {"lte": first}}}
-        if (
-            range_ in ("min:max", "minmax")
-            and (type(query) in (list, tuple))
-            and len(query) == 2
-        ):
-            return {"range": {name: {"gte": first, "lte": _zdt(query[1]).ISO8601()}}}
-        return None
 
     def get_ts_filter(self, name, value):
         """Date index produces range filters for Typesense."""
@@ -361,21 +334,6 @@ class TZCTextIndex(BaseIndex):
         if all_texts:
             return "\n".join(all_texts)
         return None
-
-    def get_query(self, name, value):
-        value = self._normalize_query(value)
-        # ES doesn't care about * like zope catalog does
-        clean_value = value.strip("*") if value else ""
-        queries = [{"match_phrase": {name: {"query": clean_value, "slop": 2}}}]
-        if name in ("Title", "SearchableText"):
-            # titles have most importance... we override here...
-            queries.append(
-                {"match_phrase_prefix": {"Title": {"query": clean_value, "boost": 2}}}
-            )
-        if name != "Title":
-            queries.append({"match": {name: {"query": clean_value}}})
-
-        return queries
 
     def get_ts_query(self, name, value):
         """Produce Typesense search parameters for text search.
@@ -490,50 +448,6 @@ class TExtendedPathIndex(BaseIndex):
     def extract(self, name, data):
         return data[name]["path"]
 
-    def get_query(self, name, value):
-        if isinstance(value, str):
-            paths = value
-            depth = -1
-            navtree = False
-            navtree_start = 0
-        else:
-            depth = value.get("depth", -1)
-            paths = value.get("query")
-            navtree = value.get("navtree", False)
-            navtree_start = value.get("navtree_start", 0)
-        if not paths:
-            return None
-        if isinstance(paths, str):
-            paths = [paths]
-        andfilters = []
-        for path in paths:
-            spath = path.split("/")
-            gtcompare = "gt"
-            start = len(spath) - 1
-            if navtree:
-                start = start + navtree_start
-                end = navtree_start + depth
-            else:
-                end = start + depth
-            if navtree or depth == -1:
-                gtcompare = "gte"
-            filters = []
-            if depth == 0:
-                andfilters.append(
-                    {"bool": {"filter": {"term": {f"{name}.path": path}}}}
-                )
-                continue
-            filters = [
-                {"prefix": {f"{name}.path": path}},
-                {"range": {f"{name}.depth": {gtcompare: start}}},
-            ]
-            if depth != -1:
-                filters.append({"range": {f"{name}.depth": {"lte": end}}})
-            andfilters.append({"bool": {"must": filters}})
-        if len(andfilters) > 1:
-            return {"bool": {"should": andfilters}}
-        return andfilters[0]
-
     def get_ts_filter(self, name, value):
         """Path filter for Typesense.
 
@@ -595,14 +509,6 @@ class TDateRangeIndex(BaseIndex):
             f"{self.index.id}1": since.strftime("%s"),
             f"{self.index.id}2": until.strftime("%s"),
         }
-
-    def get_query(self, name, value):
-        value = self._normalize_query(value)
-        date_iso = value.ISO8601()
-        return [
-            {"range": {f"{name}.{name}1": {"lte": date_iso}}},
-            {"range": {f"{name}.{name}2": {"gte": date_iso}}},
-        ]
 
     def get_ts_filter(self, name, value):
         """Date range index for Typesense.

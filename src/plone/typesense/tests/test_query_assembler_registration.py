@@ -2,7 +2,7 @@
 import unittest
 
 from plone.typesense.interfaces import IQueryAssembler
-from plone.typesense.query import TypesenseQueryAssembler, QueryAssembler
+from plone.typesense.query import TypesenseQueryAssembler
 
 
 class TestQueryAssemblerInterface(unittest.TestCase):
@@ -45,14 +45,6 @@ class TestQueryAssemblerInterface(unittest.TestCase):
     def test_typesense_assembler_is_callable(self):
         """TypesenseQueryAssembler must be callable (__call__)."""
         self.assertTrue(hasattr(TypesenseQueryAssembler, '__call__'))
-
-
-class TestESQueryAssemblerStillExists(unittest.TestCase):
-    """ES-style QueryAssembler kept for backward compat but not registered."""
-
-    def test_es_assembler_still_importable(self):
-        """QueryAssembler class still exists for backward compatibility."""
-        self.assertIsNotNone(QueryAssembler)
 
 
 if __name__ == "__main__":

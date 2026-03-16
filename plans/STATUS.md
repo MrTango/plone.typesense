@@ -1,6 +1,6 @@
 # plone.typesense — Implementation Status
 
-_Last updated: 2026-03-14_
+_Last updated: 2026-03-16_
 
 ## Phase 0: Critical Bug Fixes — "Make it actually work"
 
@@ -50,65 +50,65 @@ All 8 tasks implemented, 45 new tests added and passing.
 
 ## Phase 2: Search Feature Parity & Maintenance Views
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 | # | Task | Status | Files |
 |---|------|--------|-------|
-| 2.1 | Synchronize view (UID comparison, index missing, delete orphans) | TODO | `views/` |
-| 2.2 | Convert catalog view | TODO | `views/` |
-| 2.3 | Negation query support | TODO | `indexes.py`, `query.py` |
-| 2.4 | Phrase matching / boost for ZCTextIndex | TODO | `indexes.py` |
-| 2.5 | Custom search view | TODO | `browser/` |
-| 2.6 | Faceted search / aggregations API | TODO | `manager.py`, `result.py` |
-| 2.7 | Data sync indicator in control panel | TODO | `controlpanels/` |
-| 2.8 | Configurable highlighting | TODO | `controlpanels/`, `manager.py` |
-| 2.9 | Permission filtering + search tests | TODO | `tests/` |
+| 2.1 | Synchronize view (UID comparison, index missing, delete orphans) | DONE | `views/` |
+| 2.2 | Convert catalog view | DONE | `views/` |
+| 2.3 | Negation query support | DONE | `indexes.py`, `query.py` |
+| 2.4 | Phrase matching / boost for ZCTextIndex | DONE | `indexes.py` |
+| 2.5 | Custom search view | DONE | `browser/` |
+| 2.6 | Faceted search / aggregations API | DONE | `manager.py`, `result.py` |
+| 2.7 | Data sync indicator in control panel | DONE | `controlpanels/` |
+| 2.8 | Configurable highlighting | DONE | `controlpanels/`, `manager.py` |
+| 2.9 | Permission filtering + search tests | DONE | `tests/` |
 
 ---
 
 ## Phase 3: Schema Management & REST API
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 | # | Task | Status | Files |
 |---|------|--------|-------|
-| 3.1 | MappingAdapter — auto-generate schema from catalog | TODO | `mapping.py` (new) |
-| 3.2 | `IMappingProvider` interface | TODO | `interfaces.py` |
-| 3.3 | `convert_catalog_to_typesense()` | TODO | `manager.py` / `mapping.py` |
-| 3.4 | Schema diff detection | TODO | `controlpanels/` |
-| 3.5 | Typesense info REST endpoint | TODO | `services/` (new) |
-| 3.6 | Convert/rebuild/synchronize REST actions | TODO | `services/` |
-| 3.7 | TypesenseFilterBuilder class | TODO | `filters.py` (new) |
-| 3.8 | Connection resilience (multi-node, retries, env-var fallback) | TODO | `global_utilities/typesense.py` |
-| 3.9 | Tests for schema, REST, filter builder | TODO | `tests/` |
+| 3.1 | MappingAdapter — auto-generate schema from catalog | DONE | `mapping.py` |
+| 3.2 | `IMappingProvider` interface | DONE | `interfaces.py` |
+| 3.3 | `convert_catalog_to_typesense()` | DONE | `manager.py` / `mapping.py` |
+| 3.4 | Schema diff detection | DONE | `controlpanels/` |
+| 3.5 | Typesense info REST endpoint | DONE | `services/` |
+| 3.6 | Convert/rebuild/synchronize REST actions | DONE | `services/` |
+| 3.7 | TypesenseFilterBuilder class | DONE | `filters.py` |
+| 3.8 | Connection resilience (multi-node, retries, env-var fallback) | DONE | `global_utilities/typesense.py` |
+| 3.9 | Tests for schema, REST, filter builder | DONE | `tests/` |
 
 ---
 
 ## Phase 4: Upgrades, Installation & Release
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 | # | Task | Status | Files |
 |---|------|--------|-------|
-| 4.1 | Post-install handler | TODO | `setuphandlers.py` |
-| 4.2 | Uninstall handler | TODO | `setuphandlers.py` |
-| 4.3 | GenericSetup upgrade steps | TODO | `upgrades.py` (new) |
-| 4.4 | Profile versioning | TODO | `profiles/default/metadata.xml` |
-| 4.5 | CHANGES.rst | TODO | `CHANGES.rst` (new) |
-| 4.6 | CI/CD pipeline | TODO | `.github/workflows/` |
-| 4.7 | PyPI packaging verification | TODO | `pyproject.toml` |
+| 4.1 | Post-install handler | DONE | `setuphandlers.py` |
+| 4.2 | Uninstall handler | DONE | `setuphandlers.py` |
+| 4.3 | GenericSetup upgrade steps | DONE | `upgrades.py` |
+| 4.4 | Profile versioning | DONE | `profiles/default/metadata.xml` |
+| 4.5 | CHANGES.rst | DONE | `CHANGES.rst` |
+| 4.6 | CI/CD pipeline | DONE | `.github/workflows/` |
+| 4.7 | PyPI packaging verification | DONE | `pyproject.toml` |
 
 ---
 
 ## Phase 5: Advanced Features (Post-release)
 
-**Status: NOT STARTED**
+**Status: PARTIALLY COMPLETE**
 
 | # | Task | Priority | Status |
 |---|------|----------|--------|
 | 5.1 | Async queue support (Redis/RQ) | LOW | TODO |
-| 5.2 | Blob text extraction (PDF/DOCX) | MEDIUM | TODO |
-| 5.3 | Patch `moveObjectsByDelta` | LOW | TODO |
-| 5.4 | Scoped API tokens | LOW | TODO |
-| 5.5 | Synonym support | LOW | TODO |
+| 5.2 | Blob text extraction (PDF/DOCX) | MEDIUM | DONE |
+| 5.3 | Patch `moveObjectsByDelta` | LOW | DONE |
+| 5.4 | Scoped API tokens | LOW | DONE |
+| 5.5 | Synonym support | LOW | DONE |
 | 5.6 | Semantic/vector search | LOW | TODO |
