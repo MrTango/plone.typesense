@@ -2,7 +2,7 @@ Changelog
 =========
 
 
-1.0a2 (unreleased)
+1.0a2 (2026-03-16)
 ------------------
 
 Bug fixes:
@@ -75,6 +75,11 @@ Internal:
   [MrTango]
 
 - Add GitHub Actions CI/CD workflow with test and lint jobs.
+  [MrTango]
+
+- Remove legacy Elasticsearch-style code: QueryAssembler, get_query() methods,
+  getIndex aliases, dict path fallback, create_mapping(), extract() methods,
+  and backward-compat aliases.
   [MrTango]
 
 

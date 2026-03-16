@@ -100,6 +100,21 @@ All 8 tasks implemented, 45 new tests added and passing.
 
 ---
 
+## Refactoring Cleanup (Sprints 1–4)
+
+**Status: COMPLETE**
+
+Full Elasticsearch-to-Typesense refactoring and dead code removal. 441 tests passing, zero ES references, zero TODOs in production code (except one low-priority note in controlpanel.py:285), zero print() in production code.
+
+| Sprint | Scope | Status |
+|--------|-------|--------|
+| Sprint 1 | Remove QueryAssembler, get_query() methods, getIndex aliases | DONE |
+| Sprint 2 | Remove dict path fallback, create_mapping(), extract() methods | DONE |
+| Sprint 3 | Remove backward-compat aliases, dead imports, unused helpers | DONE |
+| Sprint 4 | Final audit, STATUS.md update, release preparation | DONE |
+
+---
+
 ## Phase 5: Advanced Features (Post-release)
 
 **Status: PARTIALLY COMPLETE**
