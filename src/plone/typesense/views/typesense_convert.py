@@ -59,7 +59,15 @@ class TypesenseConvert(BrowserView):
 
         processor = IndexProcessor()
         catalog = api.portal.get_tool("portal_catalog")
-        brains = catalog.unrestrictedSearchResults()
+        # Use _old_searchResults to get all content, bypassing Typesense
+        # routing. Must pass a query parameter (path) because ZCatalog
+        # returns empty results when called with no arguments.
+        portal_path = "/".join(api.portal.get().getPhysicalPath())
+        search = getattr(
+            catalog, "_old_searchResults",
+            catalog.searchResults,
+        )
+        brains = search(path=portal_path)
 
         bulk_size = 50
         try:

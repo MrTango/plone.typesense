@@ -62,7 +62,7 @@ class TestTypesenseConvertViewLogic(unittest.TestCase):
         "plone.typesense.views.typesense_convert.getUtility"
     )
     @mock.patch(
-        "plone.typesense.views.typesense_convert.IndexProcessor"
+        "plone.typesense.queueprocessor.IndexProcessor"
     )
     def test_convert_clears_and_reindexes(self, mock_processor_cls, mock_get_utility):
         """Test that convert clears collection and reindexes all content."""
@@ -90,7 +90,7 @@ class TestTypesenseConvertViewLogic(unittest.TestCase):
         "plone.typesense.views.typesense_convert.getUtility"
     )
     @mock.patch(
-        "plone.typesense.views.typesense_convert.IndexProcessor"
+        "plone.typesense.queueprocessor.IndexProcessor"
     )
     def test_reindex_all_handles_errors_gracefully(
         self, mock_processor_cls, mock_get_utility
@@ -120,7 +120,7 @@ class TestTypesenseConvertViewLogic(unittest.TestCase):
         "plone.typesense.views.typesense_convert.getUtility"
     )
     @mock.patch(
-        "plone.typesense.views.typesense_convert.IndexProcessor"
+        "plone.typesense.queueprocessor.IndexProcessor"
     )
     def test_convert_result_structure(self, mock_processor_cls, mock_get_utility):
         """Test that convert returns proper result structure."""

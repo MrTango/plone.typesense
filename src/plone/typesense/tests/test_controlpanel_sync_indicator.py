@@ -57,7 +57,7 @@ if HAS_RESTAPI:
                 api.portal, "get_tool"
             ) as mock_get_tool:
                 mock_catalog = mock.MagicMock()
-                mock_catalog.unrestrictedSearchResults.return_value = [1, 2, 3, 4, 5]
+                mock_catalog._old_searchResults.return_value = [1, 2, 3, 4, 5]
                 mock_get_tool.return_value = mock_catalog
 
                 status = wrapper.data_sync_status
@@ -89,7 +89,7 @@ if HAS_RESTAPI:
                 api.portal, "get_tool"
             ) as mock_get_tool:
                 mock_catalog = mock.MagicMock()
-                mock_catalog.unrestrictedSearchResults.return_value = [1, 2, 3, 4, 5]
+                mock_catalog._old_searchResults.return_value = [1, 2, 3, 4, 5]
                 mock_get_tool.return_value = mock_catalog
 
                 status = wrapper.data_sync_status

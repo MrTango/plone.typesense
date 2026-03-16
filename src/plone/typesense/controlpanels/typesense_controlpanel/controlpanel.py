@@ -6,7 +6,10 @@ from plone.app.registry.browser.controlpanel import (
     ControlPanelFormWrapper,
     RegistryEditForm,
 )
-from plone.restapi.controlpanels import RegistryConfigletPanel
+try:
+    from plone.restapi.controlpanels import RegistryConfigletPanel
+except ImportError:
+    RegistryConfigletPanel = object
 from plone.z3cform import layout
 from Products.statusmessages.interfaces import IStatusMessage
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
@@ -452,7 +455,12 @@ class TypesenseControlpanelFormWrapper(ControlPanelFormWrapper):
 
             # Get catalog count
             catalog = api.portal.get_tool("portal_catalog")
-            catalog_count = len(catalog.unrestrictedSearchResults())
+            portal_path = "/".join(api.portal.get().getPhysicalPath())
+            search = getattr(
+                catalog, "_old_searchResults",
+                catalog.searchResults,
+            )
+            catalog_count = len(search(path=portal_path))
 
             # Get Typesense count
             ts_client = ts_connector.get_client()

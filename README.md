@@ -2,7 +2,7 @@
 plone.typesense
 ===============
 
-Typesense Plone integration (WIP!)
+Typesense search engine integration for Plone
 
 Features
 --------
@@ -48,8 +48,11 @@ A nice UI is also available here: https://github.com/bfritscher/typesense-dashbo
 Usage
 -----
 
-http://localhost/Plone/@@typesense-test-connection
+http://localhost/Plone/@@typesense_controlpanel-controlpanel
 http://localhost/Plone/@@typesense-reindex-collection
+http://localhost/Plone/@@typesense-sync
+http://localhost/Plone/@@typesense-convert
+http://localhost/Plone/@@typesense-scoped-search-key
 
 
 
@@ -72,7 +75,7 @@ Contribute
 ----------
 
 - Issue Tracker: https://github.com/collective/plone.typesense/issues
-- Source Code: https://github.com/collective/plone.typesens
+- Source Code: https://github.com/collective/plone.typesense
 
 
 Support

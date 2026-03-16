@@ -1,6 +1,9 @@
 import transaction
 from plone import api
-from plone.restapi.services import Service
+try:
+    from plone.restapi.services import Service
+except ImportError:
+    Service = object
 from plone.typesense import log
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
 from zope.component import getUtility
@@ -15,7 +18,15 @@ def _reindex_all(ts_connector):
 
     processor = IndexProcessor()
     catalog = api.portal.get_tool("portal_catalog")
-    brains = catalog.unrestrictedSearchResults()
+    # Use _old_searchResults to bypass Typesense routing. Must pass
+    # a query parameter (path) because ZCatalog returns empty when
+    # called with no arguments.
+    portal_path = "/".join(api.portal.get().getPhysicalPath())
+    search = getattr(
+        catalog, "_old_searchResults",
+        catalog.searchResults,
+    )
+    brains = search(path=portal_path)
 
     bulk_size = 50
     try:
@@ -264,9 +275,14 @@ class TypesenseSync(Service):
             catalog = api.portal.get_tool("portal_catalog")
             collection_name = ts_connector.collection_base_name
 
-            # Get all UIDs from the Plone catalog
+            # Get all UIDs from the Plone catalog (bypass Typesense routing)
+            portal_path = "/".join(api.portal.get().getPhysicalPath())
+            search = getattr(
+                catalog, "_old_searchResults",
+                catalog.searchResults,
+            )
             catalog_uids = set(
-                brain.UID for brain in catalog.unrestrictedSearchResults()
+                brain.UID for brain in search(path=portal_path)
                 if brain.UID
             )
 

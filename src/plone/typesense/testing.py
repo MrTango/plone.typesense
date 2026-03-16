@@ -30,9 +30,12 @@ class PloneTypesenseLayer(PloneSandboxLayer):
         import plone.app.dexterity
 
         self.loadZCML(package=plone.app.dexterity)
-        import plone.restapi
+        try:
+            import plone.restapi
 
-        self.loadZCML(package=plone.restapi)
+            self.loadZCML(package=plone.restapi)
+        except ImportError:
+            pass
         self.loadZCML(package=plone.typesense)
 
     def setUpPloneSite(self, portal):
@@ -51,8 +54,11 @@ class PloneTypesenseRealLayer(PloneSandboxLayer):
     def setUpZope(self, app, configurationContext):
         import plone.app.dexterity
         self.loadZCML(package=plone.app.dexterity)
-        import plone.restapi
-        self.loadZCML(package=plone.restapi)
+        try:
+            import plone.restapi
+            self.loadZCML(package=plone.restapi)
+        except ImportError:
+            pass
         self.loadZCML(package=plone.typesense)
 
     def setUpPloneSite(self, portal):

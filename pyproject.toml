@@ -28,6 +28,7 @@ dependencies = [
     "plone.api>=1.8.4",
     "plone.app.dexterity",
     "typesense",
+    "plone.restapi",
 ]
 
 [project.optional-dependencies]

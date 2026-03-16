@@ -16,7 +16,14 @@ import json
 import transaction
 import unittest
 
+try:
+    import plone.restapi  # noqa: F401
+    HAS_RESTAPI = True
+except ImportError:
+    HAS_RESTAPI = False
 
+
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestTypesenseInfoServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-info GET endpoint."""
 
@@ -123,6 +130,7 @@ class TestTypesenseInfoServiceIntegration(unittest.TestCase):
         self.assertIn("fields", result["collection"])
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-extractdata GET endpoint."""
 
@@ -151,7 +159,7 @@ class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
         service = TypesenseExtractData(self.portal, self.request)
 
         with mock.patch(
-            "plone.typesense.services.typesense.IndexProcessor"
+            "plone.typesense.queueprocessor.IndexProcessor"
         ) as MockProcessor:
             MockProcessor.return_value.get_data.return_value = {}
             result = service.reply()
@@ -169,7 +177,7 @@ class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
         mock_data = {"Title": "Test Document", "Description": "A test"}
 
         with mock.patch(
-            "plone.typesense.services.typesense.IndexProcessor"
+            "plone.typesense.queueprocessor.IndexProcessor"
         ) as MockProcessor:
             MockProcessor.return_value.get_data.return_value = mock_data
             result = service.reply()
@@ -187,7 +195,7 @@ class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
         service = TypesenseExtractData(self.portal, self.request)
 
         with mock.patch(
-            "plone.typesense.services.typesense.IndexProcessor"
+            "plone.typesense.queueprocessor.IndexProcessor"
         ) as MockProcessor:
             MockProcessor.return_value.get_data.side_effect = Exception(
                 "Processing error"
@@ -207,7 +215,7 @@ class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
         mock_data = {"Title": "Test"}
 
         with mock.patch(
-            "plone.typesense.services.typesense.IndexProcessor"
+            "plone.typesense.queueprocessor.IndexProcessor"
         ) as MockProcessor:
             MockProcessor.return_value.get_data.return_value = mock_data
             result = service.reply()
@@ -216,6 +224,7 @@ class TestTypesenseExtractDataServiceIntegration(unittest.TestCase):
         self.assertEqual(result["uid"], "test-uid-123")
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestTypesenseConvertServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-convert POST endpoint."""
 
@@ -307,7 +316,7 @@ class TestTypesenseConvertServiceIntegration(unittest.TestCase):
                 return_value=mock_catalog,
             ):
                 with mock.patch(
-                    "plone.typesense.services.typesense.IndexProcessor"
+                    "plone.typesense.queueprocessor.IndexProcessor"
                 ) as MockProcessor:
                     MockProcessor.return_value.get_data.return_value = mock_data
                     result = service.reply()
@@ -321,6 +330,7 @@ class TestTypesenseConvertServiceIntegration(unittest.TestCase):
         self.assertEqual(call_args[0]["id"], "uid-1")
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-rebuild POST endpoint."""
 
@@ -412,7 +422,7 @@ class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
                 return_value=mock_catalog,
             ):
                 with mock.patch(
-                    "plone.typesense.services.typesense.IndexProcessor"
+                    "plone.typesense.queueprocessor.IndexProcessor"
                 ) as MockProcessor:
                     MockProcessor.return_value.get_data.return_value = mock_data
                     result = service.reply()
@@ -424,6 +434,7 @@ class TestTypesenseRebuildServiceIntegration(unittest.TestCase):
         self.assertIsInstance(call_args[0], dict)
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestReindexAllHelper(unittest.TestCase):
     """Tests for the shared _reindex_all helper function."""
 
@@ -456,7 +467,7 @@ class TestReindexAllHelper(unittest.TestCase):
             return_value=mock_catalog,
         ):
             with mock.patch(
-                "plone.typesense.services.typesense.IndexProcessor"
+                "plone.typesense.queueprocessor.IndexProcessor"
             ) as MockProcessor:
                 MockProcessor.return_value.get_data.return_value = mock_data
                 count = _reindex_all(mock_connector)
@@ -486,7 +497,7 @@ class TestReindexAllHelper(unittest.TestCase):
             return_value=mock_catalog,
         ):
             with mock.patch(
-                "plone.typesense.services.typesense.IndexProcessor"
+                "plone.typesense.queueprocessor.IndexProcessor"
             ) as MockProcessor:
                 MockProcessor.return_value.get_data.side_effect = [
                     Exception("bad object"),
@@ -519,7 +530,7 @@ class TestReindexAllHelper(unittest.TestCase):
             return_value=mock_catalog,
         ):
             with mock.patch(
-                "plone.typesense.services.typesense.IndexProcessor"
+                "plone.typesense.queueprocessor.IndexProcessor"
             ) as MockProcessor:
                 MockProcessor.return_value.get_data.return_value = {"Title": "Test"}
                 count = _reindex_all(mock_connector)
@@ -529,6 +540,7 @@ class TestReindexAllHelper(unittest.TestCase):
         self.assertEqual(mock_connector.index.call_count, 2)
 
 
+@unittest.skipUnless(HAS_RESTAPI, "plone.restapi not installed")
 class TestTypesenseSyncServiceIntegration(unittest.TestCase):
     """Integration tests for the @typesense-sync POST endpoint."""
 
@@ -597,7 +609,7 @@ class TestTypesenseSyncServiceIntegration(unittest.TestCase):
                 return_value=mock_catalog,
             ):
                 with mock.patch(
-                    "plone.typesense.services.typesense.IndexProcessor"
+                    "plone.typesense.queueprocessor.IndexProcessor"
                 ) as MockProcessor:
                     MockProcessor.return_value.get_data.return_value = mock_data
                     result = service.reply()

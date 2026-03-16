@@ -53,7 +53,15 @@ class TypesenseReindexCollection(BrowserView):
 
         try:
             catalog = api.portal.get_tool("portal_catalog")
-            brains = catalog.unrestrictedSearchResults()
+            # Use _old_searchResults to bypass Typesense routing.
+            # Must pass a query (path) because ZCatalog returns empty
+            # with no arguments.
+            portal_path = "/".join(api.portal.get().getPhysicalPath())
+            search = getattr(
+                catalog, "_old_searchResults",
+                catalog.searchResults,
+            )
+            brains = search(path=portal_path)
 
             for brain in brains:
                 try:

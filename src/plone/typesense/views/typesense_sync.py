@@ -33,15 +33,16 @@ class TypesenseSync(BrowserView):
         return self.index()
 
     def _get_catalog_uids(self):
-        """Get all UIDs from the Plone catalog."""
+        """Get all UIDs from the Plone catalog.
+
+        Uses the UID index directly to get the true set of cataloged UIDs,
+        bypassing both Typesense routing and ZCatalog's empty-query behavior.
+        """
         catalog = api.portal.get_tool("portal_catalog")
-        brains = catalog.unrestrictedSearchResults()
-        uids = set()
-        for brain in brains:
-            uid = brain.UID
-            if uid:
-                uids.add(uid)
-        return uids
+        uid_index = catalog._catalog.indexes.get("UID")
+        if uid_index is None:
+            return set()
+        return set(uid_index.uniqueValues())
 
     def _get_typesense_uids(self, ts_connector):
         """Get all document IDs from the Typesense collection.
