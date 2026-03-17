@@ -38,3 +38,4 @@ reports/
 venv/
 # excludes
 /typesense-data/*
+**/worktrees/*

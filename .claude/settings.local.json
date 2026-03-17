@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(env | grep -i \"mcp\\\\|devtools\")"
+      "Bash(env | grep -i \"mcp\\\\|devtools\")",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(bash start-typesense.sh 2>&1)"
     ]
   }
 }
