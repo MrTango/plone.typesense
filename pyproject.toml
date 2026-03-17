@@ -4,7 +4,7 @@ version = "1.0b1"
 description = "Typesense search engine integration for Plone CMS"
 readme = "README.md"
 license = "GPL-2.0-only"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
     { name = "Maik Derstappen", email = "md@derico.de" },
 ]
@@ -29,6 +29,10 @@ dependencies = [
     "plone.app.dexterity",
     "typesense",
     "plone.restapi",
+    "plone.classicui",
+    "Paste",
+    "plone.app.caching",
+    "plone.app.upgrade",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +42,7 @@ test = [
     "plone.app.contenttypes",
     "plone.app.robotframework[debug]",
 ]
+dev = ["invoke", "watchdog"]
 
 [project.urls]
 PyPI = "https://pypi.org/project/plone.typesense/"
@@ -69,6 +74,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "src/plone/typesense/tests/*" = ["T20"]
 
+
+[tool.plone.project.settings]
+plone_version = "6.1.4"
+distribution = "plone.classicui"
+db_storage = "direct"
 [build-system]
 requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
