@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
 import json
 
+import typesense
 from plone import api
 from plone.app.registry.browser.controlpanel import (
     ControlPanelFormWrapper,
@@ -165,13 +165,13 @@ class ITypesenseControlpanel(Interface):
 
     ts_only_indexes = schema.List(
         title=_(
-            u"Typesense only indexes",
+            "Typesense only indexes",
         ),
         description=_(
-            u"One index name per line.",
+            "One index name per line.",
         ),
         value_type=schema.TextLine(
-            title=u"index",
+            title="index",
         ),
         default=["Title", "Description", "SearchableText"],
         required=False,
@@ -180,10 +180,10 @@ class ITypesenseControlpanel(Interface):
     directives.widget(highlight=SingleCheckBoxBoolFieldWidget)
     highlight = schema.Bool(
         title=_(
-            u'Highlight',
+            "Highlight",
         ),
         description=_(
-            u'Enable search result highlighting.',
+            "Enable search result highlighting.",
         ),
         required=False,
         default=False,
@@ -191,45 +191,45 @@ class ITypesenseControlpanel(Interface):
     )
 
     highlight_start_tag = schema.TextLine(
-        title=_(u'Highlight start tag'),
+        title=_("Highlight start tag"),
         description=_(
-            u'HTML tag used to wrap the start of highlighted text. '
-            u'Default: <mark>'
+            "HTML tag used to wrap the start of highlighted text. "
+            "Default: <mark>"
         ),
         required=False,
-        default=u'<mark>',
+        default="<mark>",
         readonly=False,
     )
 
     highlight_end_tag = schema.TextLine(
-        title=_(u'Highlight end tag'),
+        title=_("Highlight end tag"),
         description=_(
-            u'HTML tag used to wrap the end of highlighted text. '
-            u'Default: </mark>'
+            "HTML tag used to wrap the end of highlighted text. "
+            "Default: </mark>"
         ),
         required=False,
-        default=u'</mark>',
+        default="</mark>",
         readonly=False,
     )
 
     highlight_fields = schema.List(
-        title=_(u'Highlight fields'),
+        title=_("Highlight fields"),
         description=_(
-            u'Fields to highlight in search results. '
-            u'One field name per line. '
-            u'Default: Title, Description, SearchableText'
+            "Fields to highlight in search results. "
+            "One field name per line. "
+            "Default: Title, Description, SearchableText"
         ),
-        value_type=schema.TextLine(title=u'field'),
-        default=[u'Title', u'Description', u'SearchableText'],
+        value_type=schema.TextLine(title="field"),
+        default=["Title", "Description", "SearchableText"],
         required=False,
     )
 
     bulk_size = schema.Int(
         title=_(
-            u'Bulk Size',
+            "Bulk Size",
         ),
         description=_(
-            u'',
+            "",
         ),
         required=False,
         default=50,
@@ -284,8 +284,9 @@ class TypesenseControlpanel(RegistryEditForm):
 
         self.applyChanges(data)
 
-        # if collection name changed, initialize new collection
-        # TODO migrate collection data
+        # If collection name changed, initialize a new (empty) collection.
+        # Changing the name creates a fresh collection; a full reindex is
+        # needed to populate it (use the "clear and rebuild" button).
         ts_connector = getUtility(ITypesenseConnector)
         if old_collection_name != data.get("collection"):
             ts_connector.init_collection()
@@ -308,7 +309,7 @@ class TypesenseControlpanel(RegistryEditForm):
             healthy = ts_client.operations.is_healthy()
             if healthy:
                 status = "Connection success, Typesense is healthy."
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             status = f"Typesense error:\n{e}"
 
         IStatusMessage(self.request).addStatusMessage(status, "info")
@@ -366,7 +367,7 @@ class TypesenseControlpanel(RegistryEditForm):
             ts_client = ts_connector.get_client()
             collection_name = ts_connector.collection_base_name
             current_schema = ts_client.collections[collection_name].retrieve()
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError, ValueError) as e:
             messages.addStatusMessage(
                 f"Could not retrieve Typesense schema: {e}", "error"
             )
@@ -430,7 +431,7 @@ class TypesenseControlpanel(RegistryEditForm):
                 f"and saved to the control panel.",
                 "info",
             )
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError, ValueError) as e:
             messages.addStatusMessage(
                 f"Error generating schema: {e}", "error"
             )

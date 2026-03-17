@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for setuphandlers (install/uninstall hooks)."""
 import sys
 import unittest

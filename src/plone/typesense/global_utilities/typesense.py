@@ -54,7 +54,7 @@ class TypesenseConnector:
             if key:
                 return key
         except api.exc.InvalidParameterError as e:
-            log.warn(f"could not load Typesense API key from registry: {e}")
+            log.warning(f"could not load Typesense API key from registry: {e}")
         # Fall back to environment variable
         env_key = os.environ.get("TYPESENSE_API_KEY")
         if env_key:
@@ -77,7 +77,7 @@ class TypesenseConnector:
             if host:
                 return host
         except api.exc.InvalidParameterError as e:
-            log.warn(f"could not load Typesense host from registry: {e}")
+            log.warning(f"could not load Typesense host from registry: {e}")
         env_host = os.environ.get("TYPESENSE_HOST")
         if env_host:
             log.info("Using Typesense host from TYPESENSE_HOST environment variable")
@@ -93,7 +93,7 @@ class TypesenseConnector:
             if port:
                 return port
         except api.exc.InvalidParameterError as e:
-            log.warn(f"could not load Typesense port from registry: {e}")
+            log.warning(f"could not load Typesense port from registry: {e}")
         env_port = os.environ.get("TYPESENSE_PORT")
         if env_port:
             log.info("Using Typesense port from TYPESENSE_PORT environment variable")
@@ -109,7 +109,7 @@ class TypesenseConnector:
             if protocol:
                 return protocol
         except api.exc.InvalidParameterError as e:
-            log.warn(f"could not load Typesense protocol from registry: {e}")
+            log.warning(f"could not load Typesense protocol from registry: {e}")
         env_protocol = os.environ.get("TYPESENSE_PROTOCOL")
         if env_protocol:
             log.info("Using Typesense protocol from TYPESENSE_PROTOCOL environment variable")
@@ -174,7 +174,7 @@ class TypesenseConnector:
                 continue
             parts = line.split(":")
             if len(parts) != 3:
-                log.warn(
+                log.warning(
                     f"Skipping invalid additional node definition: '{line}'. "
                     f"Expected format: host:port:protocol"
                 )
@@ -183,7 +183,7 @@ class TypesenseConnector:
             try:
                 port = int(port_str)
             except ValueError:
-                log.warn(
+                log.warning(
                     f"Skipping additional node with invalid port: '{line}'"
                 )
                 continue
@@ -191,7 +191,7 @@ class TypesenseConnector:
         return nodes
 
     def get_client(self):
-        """ """
+        """Return a Typesense client instance, creating one if needed."""
         client = getattr(self.data, "client", None)
         if client:
             return client
@@ -296,7 +296,7 @@ class TypesenseConnector:
         )
 
     def clear(self) -> None:
-        """ """
+        """Delete the current collection and reinitialize it."""
         ts = self.get_client()
         collection_name = (
             self._get_current_aliased_collection_name() or self.collection_base_name
@@ -359,17 +359,3 @@ class TypesenseConnector:
         self.init_collection(schema=schema)
         return schema
 
-    # def each(self) -> Iterator[dict[str, Any]]:
-    #     """ """
-    #     ts = self.get_client()
-    #     res = ts.collections[self._index_name].documents.search(
-    #         {
-    #             "q": "*",
-    #         }
-    #     )
-    #     if not res:
-    #         # eg: empty index
-    #         return
-    #     hits = res["hits"]["documents"]
-    #     for hit in hits:
-    #         yield hit

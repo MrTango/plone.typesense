@@ -15,8 +15,7 @@ from plone.typesense import log
 
 @implementer(interfaces.ITypesenseManager)
 class TypesenseManager:
-    """
-    """
+    """Manages Typesense search operations and catalog integration."""
 
     _catalog: CatalogTool = None
 
@@ -307,7 +306,7 @@ class TypesenseManager:
         log.debug(f"Running query: {orig_query}")
         try:
             return self.search(query)
-        except Exception:  # NOQA W0703
+        except Exception:  # noqa: BLE001
             if self.raise_search_exception is True:
                 raise
             log.error(f"Error running Query: {orig_query}", exc_info=True)

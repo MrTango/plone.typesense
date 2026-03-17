@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import transaction
 from Products.CMFCore.interfaces import ICatalogAware
 from Products.Five.browser import BrowserView
@@ -74,7 +73,7 @@ class TypesenseConvert(BrowserView):
             bulk_size = api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.bulk_size"
             )
-        except Exception:
+        except (KeyError, api.exc.InvalidParameterError):
             pass
 
         indexed = 0

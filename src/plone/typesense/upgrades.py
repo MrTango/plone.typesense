@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Upgrade steps for plone.typesense."""
 
 from plone.typesense import log

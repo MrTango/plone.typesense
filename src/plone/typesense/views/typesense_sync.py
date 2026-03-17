@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import transaction
 from Products.Five.browser import BrowserView
 from zope.component import getUtility
@@ -92,7 +91,7 @@ class TypesenseSync(BrowserView):
             bulk_size = api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.bulk_size"
             )
-        except Exception:
+        except (KeyError, api.exc.InvalidParameterError):
             pass
 
         indexed = 0

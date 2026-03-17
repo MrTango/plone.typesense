@@ -14,7 +14,7 @@ def get_settings():
     registry = getUtility(IRegistry)
     try:
         settings = registry.forInterface(ITypesenseControlpanel, check=False)
-    except Exception:  # noQA
+    except (KeyError, AttributeError):
         settings = None
     return settings
 

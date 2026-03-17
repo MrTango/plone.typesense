@@ -345,10 +345,4 @@ class TestPerformanceBenefit(unittest.TestCase):
         self.assertEqual(initial_count - deleted_count, final_count)
 
         # Document the benefit
-        if deleted_count > 0:
-            print(f"\n{'='*60}")
-            print(f"PERFORMANCE BENEFIT: Deleted {deleted_count} text indexes")
-            print(f"Initial indexes: {initial_count}")
-            print(f"Final indexes: {final_count}")
-            print(f"Reduction: {deleted_count} indexes ({deleted_count/initial_count*100:.1f}%)")
-            print(f"{'='*60}\n")
+        self.assertGreater(deleted_count, 0)

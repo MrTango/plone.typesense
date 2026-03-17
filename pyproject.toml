@@ -1,6 +1,6 @@
 [project]
 name = "plone.typesense"
-version = "1.0a2"
+version = "1.0b1"
 description = "Typesense search engine integration for Plone CMS"
 readme = "README.md"
 license = "GPL-2.0-only"
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["Python", "Plone", "CMS", "Typesense", "search"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
     "Framework :: Plone",
     "Framework :: Plone :: Addon",
@@ -49,6 +49,25 @@ target = "plone"
 
 [project.scripts]
 update_locale = "plone.typesense.locales.update:update_locale"
+
+[tool.ruff]
+src = ["src"]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "W",    # pycodestyle warnings
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "T20",  # flake8-print
+    "BLE",  # flake8-blind-except
+]
+ignore = [
+    "UP031",  # allow printf-style string formatting
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/plone/typesense/tests/*" = ["T20"]
 
 [build-system]
 requires = ["setuptools>=75", "wheel"]

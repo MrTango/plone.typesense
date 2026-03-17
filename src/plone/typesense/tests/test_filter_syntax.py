@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for Typesense filter syntax generation."""
 import unittest
 from plone.typesense.indexes import TKeywordIndex, TFieldIndex

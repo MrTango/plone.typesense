@@ -2,6 +2,53 @@ Changelog
 =========
 
 
+1.0b1 (2026-03-16)
+------------------
+
+Code quality:
+
+- Replace deprecated ``log.warn()`` calls with ``log.warning()``.
+  [MrTango]
+
+- Remove dead code: commented-out ``each()`` method, shadowed ``rebuild``
+  class attribute.
+  [MrTango]
+
+- Remove Python 2 artifacts: ``# -*- coding: utf-8 -*-`` headers,
+  ``u""`` string prefixes.
+  [MrTango]
+
+- Add docstrings to public classes and methods missing them.
+  [MrTango]
+
+- Modernize typing imports: ``Dict``/``List``/``Tuple`` to builtins,
+  ``Union`` to ``X | Y`` syntax.
+  [MrTango]
+
+- Fix incorrect NOQA codes (pylint ``W0703`` to ruff ``BLE001``).
+  [MrTango]
+
+- Narrow broad ``except Exception`` handlers where safe: use specific
+  ``typesense.exceptions.TypesenseClientError``, ``ConnectionError``,
+  ``TimeoutError``, ``KeyError``, etc. Add logging to previously silent
+  catch blocks.
+  [MrTango]
+
+- Replace ``print()`` with ``logging`` in production code (``testing.py``).
+  [MrTango]
+
+- Remove debug ``print()`` statements from test files.
+  [MrTango]
+
+- Add ``[tool.ruff]`` configuration to ``pyproject.toml`` to prevent
+  regressions on code quality issues.
+  [MrTango]
+
+- Resolve TODO in controlpanel: document that changing collection name
+  creates a new empty collection requiring reindex.
+  [MrTango]
+
+
 1.0a2 (2026-03-16)
 ------------------
 

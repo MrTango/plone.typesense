@@ -203,12 +203,11 @@ class TKeywordIndex(BaseIndex):
 
 
 class TFieldIndex(BaseIndex):
-    pass
+    """Typesense adapter for Plone FieldIndex."""
 
 
 class TDateIndex(BaseIndex):
-    """
-    """
+    """Typesense adapter for Plone DateIndex with timestamp conversion."""
 
     missing_date = DateTime("1900/01/01")
 
@@ -289,7 +288,7 @@ class TZCTextIndex(BaseIndex):
     def get_value(self, obj):
         try:
             fields = self.index._indexed_attrs
-        except Exception:  # NOQA W0703
+        except Exception:  # noqa: BLE001
             fields = [self.index._fieldname]
         all_texts = []
         for attr in fields:
@@ -391,7 +390,7 @@ class TBooleanIndex(BaseIndex):
 
 
 class TUUIDIndex(BaseIndex):
-    pass
+    """Typesense adapter for Plone UUIDIndex."""
 
 
 class TExtendedPathIndex(BaseIndex):
@@ -484,7 +483,7 @@ class TDateRangeIndex(BaseIndex):
 
 
 class TRecurringIndex(TDateIndex):
-    pass
+    """Typesense adapter for DateRecurringIndex."""
 
 
 INDEX_MAPPING = {

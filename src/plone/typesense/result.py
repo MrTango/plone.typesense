@@ -5,7 +5,6 @@ from plone.typesense import interfaces
 from plone.typesense.utils import get_brain_from_path
 from Products.ZCatalog.CatalogBrains import AbstractCatalogBrain
 from Products.ZCatalog.interfaces import ICatalogBrain
-from typing import Union
 from zope.component import getMultiAdapter
 from zope.globalrequest import getRequest
 from zope.interface import implementer
@@ -65,7 +64,7 @@ class TypesenseBrain:
 
 
 def BrainFactory(manager):
-    def factory(result: dict) -> Union[AbstractCatalogBrain, TypesenseBrain]:
+    def factory(result: dict) -> AbstractCatalogBrain | TypesenseBrain:
         catalog = manager.catalog
         zcatalog = catalog._catalog
         document = result.get("document", {})

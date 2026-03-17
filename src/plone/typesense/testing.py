@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from plone import api
 from plone.app.robotframework.testing import REMOTE_LIBRARY_BUNDLE_FIXTURE
 from plone.app.testing import applyProfile
@@ -10,10 +9,13 @@ from plone.app.testing import setRoles
 from plone.app.testing import TEST_USER_ID
 from plone.testing import z2
 
+import logging
 import os
 import plone.typesense
 import time
 import typesense
+
+log = logging.getLogger(__name__)
 
 
 MAX_CONNECTION_RETRIES = 20
@@ -121,10 +123,10 @@ class PloneTypesenseRealLayer(PloneSandboxLayer):
                 )
             try:
                 if client.operations.is_healthy():
-                    print(f"Successfully connected to Typesense at {protocol}://{host}:{port}")
+                    log.info(f"Successfully connected to Typesense at {protocol}://{host}:{port}")
                     break
             except Exception as e:
-                print(f"Waiting for Typesense... (attempt {counter + 1}/{MAX_CONNECTION_RETRIES})")
+                log.info(f"Waiting for Typesense... (attempt {counter + 1}/{MAX_CONNECTION_RETRIES})")
                 time.sleep(1)
                 counter += 1
 

@@ -1,6 +1,3 @@
-from typing import Dict
-from typing import List
-from typing import Tuple
 from dataclasses import dataclass
 from Products.CMFCore.interfaces import IIndexQueueProcessor
 from zope.publisher.interfaces.browser import IDefaultBrowserLayer
@@ -109,11 +106,11 @@ class IMappingProvider(Interface):
 @dataclass
 class IndexingActions:
 
-    index: Dict[str, dict]
-    reindex: Dict[str, dict]
-    unindex: Dict[str, dict]
-    index_blobs: Dict[str, dict]
-    uuid_path: Dict[str, str]
+    index: dict[str, dict]
+    reindex: dict[str, dict]
+    unindex: dict[str, dict]
+    index_blobs: dict[str, dict]
+    uuid_path: dict[str, str]
 
     def __len__(self):
         size = 0
@@ -122,7 +119,7 @@ class IndexingActions:
         size += len(self.unindex)
         return size
 
-    def all(self) -> List[Tuple[str, str, Dict]]:
+    def all(self) -> list[tuple[str, str, dict]]:
         all_data = []
         for attr, action in (
             ("index", "index"),

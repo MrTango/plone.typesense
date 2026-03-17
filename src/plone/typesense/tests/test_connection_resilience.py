@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for connection resilience: multi-node, retries, env-var API key fallback."""
 import os
 import unittest

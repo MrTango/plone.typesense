@@ -240,10 +240,10 @@ class MappingAdapter:
                     if fd.get("name") and fd["name"] not in seen_names:
                         fields.append(fd)
                         seen_names.add(fd["name"])
-        except Exception:
+        except Exception:  # noqa: BLE001
             # If component architecture is not available (e.g., in tests),
             # just skip provider lookup
-            pass
+            log.debug("Could not query IMappingProvider adapters", exc_info=True)
 
         return fields
 

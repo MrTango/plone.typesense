@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for upgrade steps."""
 import unittest
 from unittest import mock

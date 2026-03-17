@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for Typesense REST API service endpoints."""
 from plone import api
 from plone.app.testing import setRoles

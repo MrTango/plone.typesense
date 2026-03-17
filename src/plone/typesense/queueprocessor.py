@@ -21,14 +21,13 @@ from plone.typesense.utils import get_ts_only_indexes
 
 @implementer(ITypesenseSearchIndexQueueProcessor)
 class IndexProcessor:
-    """ """
+    """Processes index, reindex, and unindex operations for Typesense."""
 
     _ts_connector = None
     _ts_client = None
     _all_attributes = None
     _ts_attributes = None
     _actions: IndexingActions = None
-    rebuild: bool = False
 
     @property
     def ts_connector(self):
@@ -123,7 +122,7 @@ class IndexProcessor:
                 try:
                     # value = get_index_value(wrapped_object, index)
                     value = index.get_value(wrapped_object)
-                except Exception as exc:  # NOQA W0703
+                except Exception as exc:  # noqa: BLE001
                     path = "/".join(obj.getPhysicalPath())
                     log.error(f"Error indexing value: {path}: {index_name}\n{exc}")
                     value = None
@@ -448,8 +447,7 @@ class IndexProcessor:
         self._clean_up()
 
     def _prepare_for_typesense(self, uuid, payload):
-        """
-        """
+        """Set the document id to the UUID and preserve the original Plone id."""
         if "id" in payload:
             plone_id = payload["id"]
             payload["plone_id"] = plone_id

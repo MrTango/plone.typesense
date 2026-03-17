@@ -1,3 +1,4 @@
+import typesense
 import transaction
 from plone import api
 try:
@@ -33,7 +34,7 @@ def _reindex_all(ts_connector):
         bulk_size = api.portal.get_registry_record(
             "plone.typesense.typesense_controlpanel.bulk_size"
         )
-    except Exception:
+    except (KeyError, api.exc.InvalidParameterError):
         pass
 
     indexed = 0
@@ -98,7 +99,7 @@ class TypesenseInfo(Service):
                 "port": ts_connector.get_port,
                 "protocol": ts_connector.get_protocol,
             }
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError) as e:
             result["connection"] = {
                 "status": "error",
                 "message": str(e),
@@ -122,9 +123,9 @@ class TypesenseInfo(Service):
                 aliased_name = ts_connector._get_current_aliased_collection_name()
                 if aliased_name:
                     result["collection"]["aliased_name"] = aliased_name
-            except Exception:
+            except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError):
                 pass
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError) as e:
             result["collection"] = {
                 "name": collection_name,
                 "status": "not_found",
@@ -153,7 +154,7 @@ class TypesenseExtractData(Service):
         processor = IndexProcessor()
         try:
             data = processor.get_data(uid)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             log.exception(f"Error extracting data for UID {uid}")
             self.request.response.setStatus(500)
             return {
@@ -210,7 +211,7 @@ class TypesenseConvert(Service):
                 "message": f"Collection converted. {indexed_count} objects indexed.",
                 "indexed_count": indexed_count,
             }
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError) as e:
             log.exception("Error during typesense convert")
             self.request.response.setStatus(500)
             return {
@@ -245,7 +246,7 @@ class TypesenseRebuild(Service):
                 "message": f"Rebuild complete. {indexed_count} objects indexed.",
                 "indexed_count": indexed_count,
             }
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError) as e:
             log.exception("Error during typesense rebuild")
             self.request.response.setStatus(500)
             return {
@@ -313,7 +314,7 @@ class TypesenseSync(Service):
                     if len(hits) < per_page:
                         break
                     page += 1
-            except Exception:
+            except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError):
                 # Collection may not exist yet
                 pass
 
@@ -336,7 +337,7 @@ class TypesenseSync(Service):
                         if data:
                             data["id"] = uid
                             batch.append(data)
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         log.warning(
                             f"Sync: could not get data for UID {uid}: {exc}"
                         )
@@ -367,7 +368,7 @@ class TypesenseSync(Service):
                 "indexed_count": indexed_count,
                 "deleted_count": deleted_count,
             }
-        except Exception as e:
+        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError) as e:
             log.exception("Error during typesense sync")
             self.request.response.setStatus(500)
             return {

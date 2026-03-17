@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Integration tests for query assembly and filter generation."""
 import unittest
 from unittest.mock import patch
