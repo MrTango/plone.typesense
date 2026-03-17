@@ -3,37 +3,30 @@ from Products.ZCatalog import ZCatalog
 from Products.ZCatalog.CatalogBrains import AbstractCatalogBrain
 from zope.component import getUtility
 from plone.typesense import log
+from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import (
+    ITypesenseControlpanel,
+)
 
 
 def get_settings():
     """Return ITypesenseControlpanel values."""
-    from plone.typesense.controlpanels.typesense_controlpanel.controlpanel import (
-        ITypesenseControlpanel,
-    )
-
     registry = getUtility(IRegistry)
     try:
         settings = registry.forInterface(ITypesenseControlpanel, check=False)
-    except (KeyError, AttributeError):
+    except Exception:  # noQA
         settings = None
     return settings
 
 
 def get_ts_only_indexes():
-    """Get the list of indexes that should only be queried via Typesense.
-
-    Returns a set of index names.
+    """
     """
     settings = get_settings()
     try:
         indexes = settings.ts_only_indexes
-        # Use default if not configured
-        if not indexes:
-            indexes = ["Title", "Description", "SearchableText"]
-        return set(indexes)
+        return set(indexes) if indexes else set()
     except (KeyError, AttributeError):
-        # Fallback to defaults
-        return set(["Title", "Description", "SearchableText"])
+        return ["Title", "Description", "SearchableText"]
 
 
 def get_brain_from_path(zcatalog: ZCatalog, path: str) -> AbstractCatalogBrain:

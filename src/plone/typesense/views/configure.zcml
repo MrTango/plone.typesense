@@ -11,32 +11,6 @@
     for="*"
     class=".typesense_reindex_collection.TypesenseReindexCollection"
     template="typesense_reindex_collection.pt"
-    permission="cmf.ManagePortal"
-    layer="plone.typesense.interfaces.IPloneTypesenseLayer"
-    />
-
-  <browser:page
-    name="typesense-sync"
-    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
-    class=".typesense_sync.TypesenseSync"
-    template="typesense_sync.pt"
-    permission="cmf.ManagePortal"
-    layer="plone.typesense.interfaces.IPloneTypesenseLayer"
-    />
-
-  <browser:page
-    name="typesense-convert"
-    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
-    class=".typesense_convert.TypesenseConvert"
-    template="typesense_convert.pt"
-    permission="cmf.ManagePortal"
-    layer="plone.typesense.interfaces.IPloneTypesenseLayer"
-    />
-
-  <browser:page
-    name="typesense-scoped-search-key"
-    for="Products.CMFPlone.interfaces.IPloneSiteRoot"
-    class=".scoped_search_key.ScopedSearchKeyView"
     permission="zope2.View"
     layer="plone.typesense.interfaces.IPloneTypesenseLayer"
     />

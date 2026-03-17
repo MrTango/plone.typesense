@@ -18,13 +18,4 @@
       directory="static"
       />
 
-  <!-- Custom search view that prevents Plone from mangling search terms -->
-  <browser:page
-      name="typesense-search"
-      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
-      class=".search.TypesenseSearchView"
-      layer="plone.typesense.interfaces.IPloneTypesenseLayer"
-      permission="zope2.View"
-      />
-
 </configure>

@@ -1,15 +1,12 @@
+# -*- coding: utf-8 -*-
 import json
 
-import typesense
 from plone import api
 from plone.app.registry.browser.controlpanel import (
     ControlPanelFormWrapper,
     RegistryEditForm,
 )
-try:
-    from plone.restapi.controlpanels import RegistryConfigletPanel
-except ImportError:
-    RegistryConfigletPanel = object
+from plone.restapi.controlpanels import RegistryConfigletPanel
 from plone.z3cform import layout
 from Products.statusmessages.interfaces import IStatusMessage
 from plone.typesense.global_utilities.typesense import ITypesenseConnector
@@ -20,7 +17,7 @@ from zope.component.hooks import getSite
 from zope.interface import Interface
 from plone.app.z3cform.widget import SingleCheckBoxBoolFieldWidget
 from plone import schema
-from plone.typesense import _, log
+from plone.typesense import _
 from plone.typesense.interfaces import IPloneTypesenseLayer
 from plone.autoform import directives
 
@@ -39,11 +36,8 @@ class ITypesenseControlpanel(Interface):
 
     api_key = schema.TextLine(
         title=_("Typesense Admin API key"),
-        description=_(
-            "Leave empty to use the TYPESENSE_API_KEY environment variable."
-        ),
         default="",
-        required=False,
+        required=True,
     )
 
     host = schema.TextLine(
@@ -82,57 +76,16 @@ class ITypesenseControlpanel(Interface):
         readonly=False,
     )
 
-    additional_nodes = schema.Text(
-        title=_("Additional Typesense Nodes"),
-        description=_(
-            "One node per line in the format host:port:protocol "
-            "(e.g. node2.example.com:8108:http). "
-            "The primary host/port/protocol above is always used as the first node."
-        ),
-        default="",
-        required=False,
-        readonly=False,
-    )
-
     timeout = schema.Int(
         title=_(
             "Typesense connection timeout",
         ),
         description=_(
-            "Connection timeout in seconds",
+            "Connection timeout in milliseconds",
         ),
         required=False,
-        default=10,
-        readonly=False,
-    )
-
-    num_retries = schema.Int(
-        title=_("Number of retries"),
-        description=_(
-            "Number of times to retry a request on failure."
-        ),
-        required=False,
-        default=3,
-        readonly=False,
-    )
-
-    retry_interval_seconds = schema.Float(
-        title=_("Retry interval (seconds)"),
-        description=_(
-            "Seconds to wait between retries."
-        ),
-        required=False,
-        default=1.0,
-        readonly=False,
-    )
-
-    healthcheck_interval_seconds = schema.Int(
-        title=_("Healthcheck interval (seconds)"),
-        description=_(
-            "How often to check node health in seconds."
-        ),
-        required=False,
-        default=60,
+        default=300,
+        # defaultFactory=get_default_timeout,
         readonly=False,
     )
 
@@ -141,37 +94,54 @@ class ITypesenseControlpanel(Interface):
         description=_("Enter a JSON-formatted Typesense schema configuration."),
         schema=json.dumps({}, indent=2),
         default={
+            "name": None,
             "fields": [
-                {"name": ".*", "type": "auto"},
+                {"name": ".*", "type": "auto" },
+                {"name": "cmf_uid", "index": False},
                 {"name": "path", "type": "string", "sort": True},
-                {"name": "Title", "type": "string", "infix": True, "optional": True},
+                {"name": "Title", "type": "string", "infix": True},
                 {"name": "sortable_title", "type": "string", "sort": True},
-                {"name": "getObjPositionInParent", "type": "int32", "optional": True},
-                {"name": "Description", "type": "string", "optional": True},
-                {"name": "SearchableText", "type": "string", "infix": True, "optional": True},
+                {"name": "getObjPositionInParent", "type": "string", "sort": True},
+                {"name": "Description", "type": "string"},
+                {"name": "SearchableText", "type": "string", "infix": True},
+                {"name": "language", "type": "string", "facet": True, "optional": True},
                 {"name": "portal_type", "type": "string", "facet": True},
                 {"name": "Type", "type": "string", "facet": True},
-                {"name": "review_state", "type": "string", "facet": True, "optional": True},
-                {"name": "Subject", "type": "string[]", "facet": True, "optional": True},
-                {"name": "allowedRolesAndUsers", "type": "string[]"},
-                {"name": "Date", "type": "int64", "optional": True},
-                {"name": "created", "type": "int64", "optional": True},
-                {"name": "modified", "type": "int64", "optional": True},
+                {"name": "review_state", "type": "string", "facet": True},
+                {"name": "total_comments", "type": "int32", "facet": False, "optional": True},
+                {"name": "Subject", "type": "string[]", "facet": True},
+                {"name": "allowedRolesAndUsers", "type": "string[]", "facet": False},
+                {"name": "Date", "type": "int64", "facet": False},
+                {"name": "created", "type": "int64", "facet": False},
+                {"name": "modified", "type": "int64", "facet": False},
+                {"name": "effective", "type": "int64", "facet": False},
+                {"name": "expires", "type": "int64", "facet": False},
             ],
             "default_sorting_field": "sortable_title",
+            "token_separators": ["-"],
+            "attributesToSnippet": [
+                "title",
+                "description",
+                "text:20",
+            ],
+            "attributesToHighlight": [
+                "title",
+                "description",
+                "text:20",
+            ],
         },
         required=True,
     )
 
     ts_only_indexes = schema.List(
         title=_(
-            "Typesense only indexes",
+            u"Typesense only indexes",
         ),
         description=_(
-            "One index name per line.",
+            u"One index name per line.",
         ),
         value_type=schema.TextLine(
-            title="index",
+            title=u"index",
         ),
         default=["Title", "Description", "SearchableText"],
         required=False,
@@ -180,83 +150,27 @@ class ITypesenseControlpanel(Interface):
     directives.widget(highlight=SingleCheckBoxBoolFieldWidget)
     highlight = schema.Bool(
         title=_(
-            "Highlight",
+            u'Highlight',
         ),
         description=_(
-            "Enable search result highlighting.",
+            u'',
         ),
         required=False,
         default=False,
         readonly=False,
     )
 
-    highlight_start_tag = schema.TextLine(
-        title=_("Highlight start tag"),
-        description=_(
-            "HTML tag used to wrap the start of highlighted text. "
-            "Default: <mark>"
-        ),
-        required=False,
-        default="<mark>",
-        readonly=False,
-    )
-
-    highlight_end_tag = schema.TextLine(
-        title=_("Highlight end tag"),
-        description=_(
-            "HTML tag used to wrap the end of highlighted text. "
-            "Default: </mark>"
-        ),
-        required=False,
-        default="</mark>",
-        readonly=False,
-    )
-
-    highlight_fields = schema.List(
-        title=_("Highlight fields"),
-        description=_(
-            "Fields to highlight in search results. "
-            "One field name per line. "
-            "Default: Title, Description, SearchableText"
-        ),
-        value_type=schema.TextLine(title="field"),
-        default=["Title", "Description", "SearchableText"],
-        required=False,
-    )
-
     bulk_size = schema.Int(
         title=_(
-            "Bulk Size",
+            u'Bulk Size',
         ),
         description=_(
-            "",
+            u'',
         ),
         required=False,
         default=50,
         # defaultFactory=get_default_bulk_size  ,
         readonly=False,
-    )
-
-    synonyms = schema.Text(
-        title=_("Synonyms"),
-        description=_(
-            "Configure synonym rules, one per line. "
-            "Multi-way: word1, word2, word3. "
-            "One-way: root => synonym1, synonym2. "
-            "Lines starting with # are comments."
-        ),
-        required=False,
-        default="",
-    )
-
-    search_api_key = schema.TextLine(
-        title=_("Typesense Search-only API key"),
-        description=_(
-            "A search-only API key used for generating scoped search tokens. "
-            "Create one in Typesense with only search permissions."
-        ),
-        default="",
-        required=False,
     )
 
 
@@ -284,9 +198,8 @@ class TypesenseControlpanel(RegistryEditForm):
 
         self.applyChanges(data)
 
-        # If collection name changed, initialize a new (empty) collection.
-        # Changing the name creates a fresh collection; a full reindex is
-        # needed to populate it (use the "clear and rebuild" button).
+        # if collection name changed, initialize new collection
+        # TODO migrate collection data
         ts_connector = getUtility(ITypesenseConnector)
         if old_collection_name != data.get("collection"):
             ts_connector.init_collection()
@@ -309,193 +222,39 @@ class TypesenseControlpanel(RegistryEditForm):
             healthy = ts_client.operations.is_healthy()
             if healthy:
                 status = "Connection success, Typesense is healthy."
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             status = f"Typesense error:\n{e}"
 
         IStatusMessage(self.request).addStatusMessage(status, "info")
         self.request.response.redirect(self.request.getURL())
 
-    @button.buttonAndHandler(_("Sync Synonyms"), name="sync_synonyms")
-    def handle_sync_synonyms(self, action):
-        """Sync synonym rules to Typesense."""
-        from plone.typesense.synonyms import parse_synonyms, sync_synonyms
-
-        saved = self.save()
-        if saved is False:
-            return
-
-        synonyms_text = api.portal.get_registry_record(
-            "plone.typesense.typesense_controlpanel.synonyms"
-        )
-        synonym_rules = parse_synonyms(synonyms_text)
-
-        ts_connector = getUtility(ITypesenseConnector)
-        ts_client = ts_connector.get_client()
-        collection_name = ts_connector.collection_base_name
-
-        upserted, errors = sync_synonyms(ts_client, collection_name, synonym_rules)
-
-        if errors:
-            status = f"Synced {upserted} synonyms with {len(errors)} error(s): {'; '.join(errors)}"
-            msg_type = "warning"
-        else:
-            status = f"Successfully synced {upserted} synonym rule(s) to Typesense."
-            msg_type = "info"
-
-        IStatusMessage(self.request).addStatusMessage(status, msg_type)
-        self.request.response.redirect(self.request.getURL())
-
     @button.buttonAndHandler(_("clear and rebuild"), name="clear_and_rebuild")
     def handle_clear_and_rebuild(self, action):
-        """clear and rebuild collection from Plone"""
+        """ clear and rebuild collection from Plone
+        """
         portal = api.portal.get()
         ts_connector = getUtility(ITypesenseConnector)
+        # ts_client = ts_connector.get_client()
         self.objects = []
         batch_size = 100
 
-    @button.buttonAndHandler(_("detect schema changes"), name="detect_schema_changes")
-    def handle_detect_schema_changes(self, action):
-        """Compare catalog indexes against current Typesense schema and
-        report differences."""
-        from plone.typesense.mapping import detect_schema_changes
+        # def _index_object(obj, path):
+        #     if not ICatalogAware.providedBy(obj):
+        #         return
+        #     self.objects.append(obj)
+        #     if len(self.objects) >= batch_size:
+        #         ts_connector.index(self.objects)
+        #         self.objects = []
+        #     if len(self.objects) > 0:
+        #         ts_connector.index(self.objects)
 
-        ts_connector = getUtility(ITypesenseConnector)
-        catalog = api.portal.get_tool("portal_catalog")
-        messages = IStatusMessage(self.request)
+        # portal.ZopeFindAndApply(portal, search_sub=True, apply_func=_index_object)
+        # return self.index()
 
-        try:
-            ts_client = ts_connector.get_client()
-            collection_name = ts_connector.collection_base_name
-            current_schema = ts_client.collections[collection_name].retrieve()
-        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError, ValueError) as e:
-            messages.addStatusMessage(
-                f"Could not retrieve Typesense schema: {e}", "error"
-            )
-            self.request.response.redirect(self.request.getURL())
-            return
-
-        diff = detect_schema_changes(catalog, current_schema)
-        added = diff.get("added", [])
-        removed = diff.get("removed", [])
-        type_changed = diff.get("type_changed", [])
-
-        if not added and not removed and not type_changed:
-            messages.addStatusMessage(
-                "Schema is in sync: no differences detected between "
-                "catalog indexes and Typesense schema.",
-                "info",
-            )
-        else:
-            parts = []
-            if added:
-                names = ", ".join(f["name"] for f in added)
-                parts.append(f"New in catalog (not in Typesense): {names}")
-            if removed:
-                names = ", ".join(f["name"] for f in removed)
-                parts.append(f"In Typesense but not in catalog: {names}")
-            if type_changed:
-                descs = ", ".join(
-                    f"{c['name']} (catalog: {c['catalog_type']}, "
-                    f"typesense: {c['typesense_type']})"
-                    for c in type_changed
-                )
-                parts.append(f"Type mismatches: {descs}")
-
-            msg = "Schema differences detected. " + " | ".join(parts)
-            messages.addStatusMessage(msg, "warning")
-            log.warning("Typesense schema diff: %s", msg)
-
-        self.request.response.redirect(self.request.getURL())
-
-    @button.buttonAndHandler(
-        _("generate schema from catalog"), name="generate_schema_from_catalog"
-    )
-    def handle_generate_schema(self, action):
-        """Auto-generate a Typesense schema from the current catalog indexes
-        and store it in the control panel ts_schema field."""
-        from plone.typesense.mapping import convert_catalog_to_typesense
-
-        catalog = api.portal.get_tool("portal_catalog")
-        ts_connector = getUtility(ITypesenseConnector)
-        messages = IStatusMessage(self.request)
-
-        try:
-            schema = convert_catalog_to_typesense(
-                catalog, collection_name=ts_connector.collection_base_name
-            )
-            api.portal.set_registry_record(
-                "plone.typesense.typesense_controlpanel.ts_schema", schema
-            )
-            messages.addStatusMessage(
-                f"Schema generated with {len(schema.get('fields', []))} fields "
-                f"and saved to the control panel.",
-                "info",
-            )
-        except (typesense.exceptions.TypesenseClientError, ConnectionError, TimeoutError, ValueError) as e:
-            messages.addStatusMessage(
-                f"Error generating schema: {e}", "error"
-            )
-
-        self.request.response.redirect(self.request.getURL())
-
-
-
-class TypesenseControlpanelFormWrapper(ControlPanelFormWrapper):
-    """Custom control panel wrapper with data sync indicator."""
-
-    @property
-    def data_sync_status(self):
-        """Compare document counts between Plone catalog and Typesense.
-
-        Returns a dict with counts and sync status, or None if unavailable.
-        """
-        try:
-            ts_connector = getUtility(ITypesenseConnector)
-            if not ts_connector.enabled:
-                return None
-
-            # Get catalog count
-            catalog = api.portal.get_tool("portal_catalog")
-            portal_path = "/".join(api.portal.get().getPhysicalPath())
-            search = getattr(
-                catalog, "_old_searchResults",
-                catalog.searchResults,
-            )
-            catalog_count = len(search(path=portal_path))
-
-            # Get Typesense count
-            ts_client = ts_connector.get_client()
-            collection_name = ts_connector.collection_base_name
-            collection_info = ts_client.collections[collection_name].retrieve()
-            typesense_count = collection_info.get("num_documents", 0)
-
-            in_sync = catalog_count == typesense_count
-
-            return {
-                "catalog_count": catalog_count,
-                "typesense_count": typesense_count,
-                "in_sync": in_sync,
-                "difference": abs(catalog_count - typesense_count),
-            }
-        except Exception as exc:
-            log.debug(f"Could not retrieve sync status: {exc}")
-            return None
-
-    @property
-    def connection_status(self):
-        """Check if Typesense connection is healthy."""
-        try:
-            ts_connector = getUtility(ITypesenseConnector)
-            if not ts_connector.enabled:
-                return None
-            ts_client = ts_connector.get_client()
-            return ts_client.operations.is_healthy()
-        except Exception:
-            return False
 
 
 TypesenseControlpanelView = layout.wrap_form(
-    TypesenseControlpanel, TypesenseControlpanelFormWrapper
+    TypesenseControlpanel, ControlPanelFormWrapper
 )
 
 

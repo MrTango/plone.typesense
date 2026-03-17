@@ -13,11 +13,11 @@ TYPESENSE_DATA_DIR=${TYPESENSE_DATA_DIR:-/tmp/typesense-data}
 # Detect container runtime
 if command -v docker &> /dev/null; then
     CONTAINER_CMD="docker"
-    VOLUME_OPTS="-v${TYPESENSE_DATA_DIR}:/data"
+    VOLUME_OPTS="-v ${TYPESENSE_DATA_DIR}:/data"
 elif command -v podman &> /dev/null; then
     CONTAINER_CMD="podman"
     # Add :z for SELinux contexts on Podman
-    VOLUME_OPTS="-v${TYPESENSE_DATA_DIR}:/data:z"
+    VOLUME_OPTS="-v ${TYPESENSE_DATA_DIR}:/data:z"
 else
     echo "Error: Neither docker nor podman found."
     echo "Please install Docker or Podman to run Typesense."
@@ -55,6 +55,6 @@ $CONTAINER_CMD run \
     --rm \
     -p "${TYPESENSE_PORT}:8108" \
     $VOLUME_OPTS \
-    typesense/typesense:latest \
+    typesense/typesense:27.1 \
     --data-dir /data \
     --api-key="${TYPESENSE_API_KEY}"

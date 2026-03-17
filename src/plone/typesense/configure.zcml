@@ -3,7 +3,6 @@
     xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
     xmlns:i18n="http://namespaces.zope.org/i18n"
     xmlns:plone="http://namespaces.plone.org/plone"
-    xmlns:zcml="http://namespaces.zope.org/zcml"
     i18n_domain="plone.typesense">
 
   <i18n:registerTranslations directory="locales" />
@@ -42,49 +41,16 @@
       name="plone.typesense-hiddenprofiles"
       />
 
-  <!-- Upgrade steps -->
-  <genericsetup:upgradeStep
-      title="Migrate from legacy versioning (1000) to version 1"
-      description="Reset profile version from legacy 1000 to proper version 1."
-      source="1000"
-      destination="1"
-      handler=".upgrades.reload_profile"
-      profile="plone.typesense:default"
-      />
-
-  <genericsetup:upgradeStep
-      title="Upgrade to version 2"
-      description="Re-import registry to pick up control panel changes."
-      source="1"
-      destination="2"
-      handler=".upgrades.upgrade_to_2"
-      profile="plone.typesense:default"
-      />
-
   <!-- -*- extra stuff goes here -*- -->
-
-  <adapter
-      for="*"
-      provides=".interfaces.IMappingAdapter"
-      factory=".mapping.MappingAdapter"
-      />
 
   <include package=".views" />
 
-  <include package=".controlpanels" zcml:condition="installed plone.restapi" />
+  <include package=".controlpanels" />
 
-  <include package=".patches" />
 
   <include package=".subscribers" />
   <include package=".global_utilities" />
-  <include package=".services" zcml:condition="installed plone.restapi" />
 
-  <adapter
-      for="zope.interface.Interface
-           plone.typesense.interfaces.ITypesenseManager"
-      provides="plone.typesense.interfaces.IQueryAssembler"
-      factory=".query.TypesenseQueryAssembler"
-      />
 
   <utility
       factory=".queueprocessor.IndexProcessor"

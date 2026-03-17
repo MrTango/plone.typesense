@@ -1,5 +1,4 @@
 import json
-import os
 import threading
 
 import typesense
@@ -8,7 +7,7 @@ from plone.typesense import _, log
 from zope.interface import Interface, implementer
 
 
-class TypesenseError(Exception):
+class TypesenseError(BaseException):
     def __init__(self, reason, exit_status=1):
         self.reason = reason
         self.exit_status = exit_status
@@ -48,19 +47,12 @@ class TypesenseConnector:
     @property
     def get_api_key(self):
         try:
-            key = api.portal.get_registry_record(
+            return api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.api_key"
             )
-            if key:
-                return key
         except api.exc.InvalidParameterError as e:
-            log.warning(f"could not load Typesense API key from registry: {e}")
-        # Fall back to environment variable
-        env_key = os.environ.get("TYPESENSE_API_KEY")
-        if env_key:
-            log.info("Using Typesense API key from TYPESENSE_API_KEY environment variable")
-            return env_key
-        return None
+            log.warn(f"could not load Typesense API key from registry: {e}")
+            return
 
     @property
     def get_timeout(self):
@@ -70,51 +62,21 @@ class TypesenseConnector:
 
     @property
     def get_host(self):
-        try:
-            host = api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.host"
-            )
-            if host:
-                return host
-        except api.exc.InvalidParameterError as e:
-            log.warning(f"could not load Typesense host from registry: {e}")
-        env_host = os.environ.get("TYPESENSE_HOST")
-        if env_host:
-            log.info("Using Typesense host from TYPESENSE_HOST environment variable")
-            return env_host
-        return "localhost"
+        return api.portal.get_registry_record(
+            "plone.typesense.typesense_controlpanel.host"
+        )
 
     @property
     def get_port(self):
-        try:
-            port = api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.port"
-            )
-            if port:
-                return port
-        except api.exc.InvalidParameterError as e:
-            log.warning(f"could not load Typesense port from registry: {e}")
-        env_port = os.environ.get("TYPESENSE_PORT")
-        if env_port:
-            log.info("Using Typesense port from TYPESENSE_PORT environment variable")
-            return env_port
-        return "8108"
+        return api.portal.get_registry_record(
+            "plone.typesense.typesense_controlpanel.port"
+        )
 
     @property
     def get_protocol(self):
-        try:
-            protocol = api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.protocol"
-            )
-            if protocol:
-                return protocol
-        except api.exc.InvalidParameterError as e:
-            log.warning(f"could not load Typesense protocol from registry: {e}")
-        env_protocol = os.environ.get("TYPESENSE_PROTOCOL")
-        if env_protocol:
-            log.info("Using Typesense protocol from TYPESENSE_PROTOCOL environment variable")
-            return env_protocol
-        return "http"
+        return api.portal.get_registry_record(
+            "plone.typesense.typesense_controlpanel.protocol"
+        )
 
     @property
     def get_ts_schema(self):
@@ -122,76 +84,8 @@ class TypesenseConnector:
             "plone.typesense.typesense_controlpanel.ts_schema"
         )
 
-    @property
-    def get_additional_nodes(self):
-        try:
-            return api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.additional_nodes"
-            )
-        except api.exc.InvalidParameterError:
-            return ""
-
-    @property
-    def get_num_retries(self):
-        try:
-            return api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.num_retries"
-            )
-        except api.exc.InvalidParameterError:
-            return 3
-
-    @property
-    def get_retry_interval_seconds(self):
-        try:
-            return api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.retry_interval_seconds"
-            )
-        except api.exc.InvalidParameterError:
-            return 1.0
-
-    @property
-    def get_healthcheck_interval_seconds(self):
-        try:
-            return api.portal.get_registry_record(
-                "plone.typesense.typesense_controlpanel.healthcheck_interval_seconds"
-            )
-        except api.exc.InvalidParameterError:
-            return 60
-
-    def _parse_additional_nodes(self):
-        """Parse additional_nodes text into a list of node dicts.
-
-        Each line should be in the format: host:port:protocol
-        Lines that don't match this format are skipped with a warning.
-        """
-        raw = self.get_additional_nodes
-        if not raw:
-            return []
-        nodes = []
-        for line in raw.strip().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(":")
-            if len(parts) != 3:
-                log.warning(
-                    f"Skipping invalid additional node definition: '{line}'. "
-                    f"Expected format: host:port:protocol"
-                )
-                continue
-            host, port_str, protocol = parts
-            try:
-                port = int(port_str)
-            except ValueError:
-                log.warning(
-                    f"Skipping additional node with invalid port: '{line}'"
-                )
-                continue
-            nodes.append({"host": host, "port": port, "protocol": protocol})
-        return nodes
-
     def get_client(self):
-        """Return a Typesense client instance, creating one if needed."""
+        """ """
         client = getattr(self.data, "client", None)
         if client:
             return client
@@ -202,26 +96,19 @@ class TypesenseConnector:
         ts_host = self.get_host
         ts_port = self.get_port
         ts_protocol = self.get_protocol
-
-        # Build nodes list: primary node first, then additional nodes
-        nodes = [
+        self.data.client = typesense.Client(
             {
-                "host": ts_host,
-                "port": int(ts_port),
-                "protocol": ts_protocol,
+                "nodes": [
+                    {
+                        "host": ts_host,  # For Typesense Cloud use xxx.a1.typesense.net
+                        "port": int(ts_port),  # For Typesense Cloud use 443
+                        "protocol": ts_protocol,  # For Typesense Cloud use https
+                    }
+                ],
+                "api_key": api_key,
+                "connection_timeout_seconds": int(connection_timeout) or 300,
             }
-        ]
-        nodes.extend(self._parse_additional_nodes())
-
-        client_config = {
-            "nodes": nodes,
-            "api_key": api_key,
-            "connection_timeout_seconds": int(connection_timeout) or 10,
-            "num_retries": self.get_num_retries or 3,
-            "retry_interval_seconds": self.get_retry_interval_seconds or 1.0,
-            "healthcheck_interval_seconds": self.get_healthcheck_interval_seconds or 60,
-        }
-        self.data.client = typesense.Client(client_config)
+        )
         return self.data.client
 
     def test_connection(self):
@@ -264,39 +151,51 @@ class TypesenseConnector:
 
     def update(self, objects) -> None:
         """update given objects"""
-        if not objects:
-            return
         ts = self.get_client()
+        objects_for_bulk = ""
         for obj in objects:
-            log.info(f"Updating object: {obj.get('id', 'unknown')}")
-            ts.collections[self.collection_base_name].documents[obj["id"]].update(obj)
+            log.info(f"object: {object}")
+            res = ts.collections[self.collection_base_name].documents.update(json.dumps(obj), {"filter_by": f"id: {obj['id']}"})
 
     def index(self, objects) -> None:
         """index given objects"""
-        if not objects:
-            return
         ts = self.get_client()
-        log.info(f"Indexing {len(objects)} objects into '{self.collection_base_name}'.")
-        ts.collections[self.collection_base_name].documents.import_(
-            objects, {"action": "upsert"}
-        )
+        objects_for_bulk = ""
+        for obj in objects:
+            log.info(f"object: {object}")
+            res = ts.collections[self.collection_base_name].documents.upsert(json.dumps(obj))
+            # objects_for_bulk += f"{json.dumps(obj)}\n"
+
+        # log.info(f"Bulk import objects into {self.collection_base_name}'...")
+        # res = ts.collections[self.collection_base_name].documents.import_(
+        #     objects_for_bulk, {"action": "emplace"}
+        # )
+        # res = res.split("\n")
+        # # checks if number of indexed object and object in objects are equal
+        # if not len(res) == len(objects):
+        #     raise SystemError(
+        #         _(
+        #             "Unable to index all objects. (indexed: %(indexed)s, "
+        #             "total: %(total)s)\n%(result)s",
+        #             indexed=len(res),
+        #             total=len(objects),
+        #             result=res,
+        #         )
+        #     )
 
     def delete(self, uids) -> None:
-        """Delete documents by their UIDs from Typesense."""
-        if not uids:
-            return
+        """ """
         ts = self.get_client()
         log.info(
-            f"Delete {len(uids)} uids from collection "
+            f"Delete uids: {', '.join(uids)} from collection "
             f"'{self.collection_base_name}'."
         )
-        uid_list = ",".join([f"`{uid}`" for uid in uids])
         ts.collections[self.collection_base_name].documents.delete(
-            {"filter_by": f"id:[{uid_list}]"}
+            {"filter_by=id": uids}
         )
 
     def clear(self) -> None:
-        """Delete the current collection and reinitialize it."""
+        """ """
         ts = self.get_client()
         collection_name = (
             self._get_current_aliased_collection_name() or self.collection_base_name
@@ -305,35 +204,21 @@ class TypesenseConnector:
         ts.collections[collection_name].delete()
         self.init_collection()
 
-    def sync_synonyms(self, synonym_rules: list) -> tuple:
-        """Sync synonym rules to the current collection.
-
-        :param synonym_rules: list of synonym dicts from parse_synonyms()
-        :returns: tuple of (upserted_count, errors)
-        """
-        from plone.typesense.synonyms import sync_synonyms
-        ts = self.get_client()
-        return sync_synonyms(ts, self.collection_base_name, synonym_rules)
-
-    def init_collection(self, schema=None) -> None:
-        """Initialize a Typesense collection.
-
-        :param schema: Optional schema dict. If not provided, uses the
-            schema from the control panel registry (ts_schema).
-            When a catalog is available, callers can use
-            ``convert_catalog_to_typesense()`` from ``plone.typesense.mapping``
-            to auto-generate a schema from catalog indexes.
-        """
+    def init_collection(self) -> None:
         ts = self.get_client()
         try:
             ts.collections[self.collection_base_name].retrieve()
         except typesense.exceptions.ObjectNotFound:
             # To allow rolling updates, we work with index aliases
             aliased_index_name = self._get_next_aliased_collection_name()
-            index_config = schema if schema else self.get_ts_schema
-            # Ensure we use a copy so we don't mutate the original
-            index_config = dict(index_config)
-            index_config["name"] = aliased_index_name
+            # index_name / collection_name is part of the schema defined in
+            # self._index_config
+            index_config = self.get_ts_schema
+            index_config.update(
+                {
+                    "name": aliased_index_name,
+                }
+            )
             log.info(f"Create aliased_index_name '{aliased_index_name}'...")
             ts.collections.create(index_config)
             log.info(
@@ -344,18 +229,17 @@ class TypesenseConnector:
                 self.collection_base_name, {"collection_name": aliased_index_name}
             )
 
-    def init_collection_from_catalog(self, catalog) -> dict:
-        """Initialize a Typesense collection using an auto-generated schema
-        derived from the Plone catalog indexes.
-
-        :param catalog: The Plone portal_catalog tool
-        :returns: The generated schema dict
-        """
-        from plone.typesense.mapping import convert_catalog_to_typesense
-
-        schema = convert_catalog_to_typesense(
-            catalog, collection_name=self.collection_base_name
-        )
-        self.init_collection(schema=schema)
-        return schema
-
+    # def each(self) -> Iterator[dict[str, Any]]:
+    #     """ """
+    #     ts = self.get_client()
+    #     res = ts.collections[self._index_name].documents.search(
+    #         {
+    #             "q": "*",
+    #         }
+    #     )
+    #     if not res:
+    #         # eg: empty index
+    #         return
+    #     hits = res["hits"]["documents"]
+    #     for hit in hits:
+    #         yield hit
