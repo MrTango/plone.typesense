@@ -3,13 +3,8 @@ name = "plone.typesense"
 version = "1.0.0a1"
 description = "A Plone Typesense integration"
 readme = "README.md"
-<<<<<<< HEAD
-requires-python = ">=3.10"
-license = {text = "GPL-2.0-or-later"}
-=======
 license = "GPL-2.0-only"
 requires-python = ">=3.12"
->>>>>>> 80c5bae3cccc5cff15359f798ad448b103f11fed
 authors = [
     {name = "MrTango", email = "md@derico.de"}
 ]
@@ -116,9 +111,6 @@ known-first-party = ["plone"]
 plone_version = "6.1.4"
 distribution = "plone.classicui"
 db_storage = "direct"
-[build-system]
-requires = ["setuptools>=75", "wheel"]
-build-backend = "setuptools.build_meta"
 
 [tool.ruff.format]
 preview = true
