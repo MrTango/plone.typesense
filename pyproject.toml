@@ -79,6 +79,8 @@ where = ["src"]
 [tool.uv]
 dev-dependencies = [
     "plone.typesense[test]",
+    "pytest",
+    "pytest-plone",
     "uv-import-constraint-dependencies",
 ]
 constraint-dependencies = [
