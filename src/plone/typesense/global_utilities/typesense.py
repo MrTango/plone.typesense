@@ -34,9 +34,8 @@ class TypesenseConnector:
             return api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.enabled"
             )
-        except api.exc.InvalidParameterError:
-            value = False
-        return value
+        except (api.exc.InvalidParameterError, Exception):
+            return False
 
     @property
     def collection_base_name(self):
