@@ -257,8 +257,10 @@ class IndexProcessor:
                     ts_data[action] = []
                 ts_data[action].append(payload)
             print(f"actions: {ts_data.keys()}")
-            self.ts_index(ts_data["index"])
-            self.ts_update(ts_data["update"])
+            if "index" in ts_data:
+                self.ts_index(ts_data["index"])
+            if "update" in ts_data:
+                self.ts_update(ts_data["update"])
         self._clean_up()
 
     def _prepare_for_typesense(self, uuid, payload):
