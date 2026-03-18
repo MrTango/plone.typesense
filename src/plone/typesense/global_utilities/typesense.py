@@ -123,14 +123,16 @@ class TypesenseConnector:
         except typesense.TypesenseClientError as exc:
             raise TypesenseError(_("Unable to connect :") + "\n\n" + repr(exc)) from exc
 
-    def _get_current_aliased_collection_name(self) -> str:
+    def _get_current_aliased_collection_name(self) -> str | None:
         """Get the current aliased index name if any"""
         ts = self.get_client()
-        current_aliased_index_name = None
-        alias = ts.aliases[self.collection_base_name].retrieve()
+        try:
+            alias = ts.aliases[self.collection_base_name].retrieve()
+        except typesense.exceptions.ObjectNotFound:
+            return None
         if "collection_name" in alias:
-            current_aliased_index_name = alias["collection_name"]
-        return current_aliased_index_name
+            return alias["collection_name"]
+        return None
 
     def _get_next_aliased_collection_name(
         self, aliased_index_name: str | None = None
@@ -148,8 +150,18 @@ class TypesenseConnector:
             next_version = int(aliased_index_name.split("-")[-1]) + 1
         return f"{self.collection_base_name}-{next_version}"
 
+    def _ensure_collection(self) -> None:
+        """Ensure the collection exists, creating it if necessary."""
+        ts = self.get_client()
+        try:
+            ts.collections[self.collection_base_name].retrieve()
+        except typesense.exceptions.ObjectNotFound:
+            log.info(f"Collection '{self.collection_base_name}' not found, initializing.")
+            self.init_collection()
+
     def update(self, objects) -> None:
         """update given objects"""
+        self._ensure_collection()
         ts = self.get_client()
         objects_for_bulk = ""
         for obj in objects:
@@ -158,6 +170,7 @@ class TypesenseConnector:
 
     def index(self, objects) -> None:
         """index given objects"""
+        self._ensure_collection()
         ts = self.get_client()
         objects_for_bulk = ""
         for obj in objects:
@@ -200,7 +213,10 @@ class TypesenseConnector:
             self._get_current_aliased_collection_name() or self.collection_base_name
         )
         log.info(f"Clear current_aliased_collection_name '{collection_name}'.")
-        ts.collections[collection_name].delete()
+        try:
+            ts.collections[collection_name].delete()
+        except typesense.exceptions.ObjectNotFound:
+            log.info(f"Collection '{collection_name}' does not exist, skipping delete.")
         self.init_collection()
 
     def init_collection(self) -> None:
