@@ -5,7 +5,8 @@
       "Bash(uv run:*)",
       "Bash(uv sync:*)",
       "Bash(bash start-typesense.sh 2>&1)",
-      "Bash(ls -la /home/maik/develop/src/plone.typesense/src/plone/typesense/tests/test_*.py)"
+      "Bash(ls -la /home/maik/develop/src/plone.typesense/src/plone/typesense/tests/test_*.py)",
+      "Bash(inv create-site:*)"
     ]
   }
 }
