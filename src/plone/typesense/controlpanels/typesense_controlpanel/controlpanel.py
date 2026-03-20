@@ -97,7 +97,7 @@ class ITypesenseControlpanel(Interface):
             "name": None,
             "fields": [
                 {"name": ".*", "type": "auto" },
-                {"name": "cmf_uid", "index": False},
+                {"name": "cmf_uid", "type": "auto", "index": False, "optional": True},
                 {"name": "path", "type": "string", "sort": True},
                 {"name": "Title", "type": "string", "infix": True},
                 {"name": "sortable_title", "type": "string", "sort": True},

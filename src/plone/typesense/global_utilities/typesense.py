@@ -219,6 +219,22 @@ class TypesenseConnector:
             log.info(f"Collection '{collection_name}' does not exist, skipping delete.")
         self.init_collection()
 
+    def _sanitize_schema_fields(self, schema: dict) -> None:
+        """Ensure every field in the schema has a 'type' key.
+
+        Existing installations may have registry data with fields missing the
+        required 'type' property (e.g. cmf_uid).  This adds 'type': 'auto' as
+        a safe default so Typesense does not reject the schema with a 400.
+        """
+        for field in schema.get("fields", []):
+            if "name" in field and "type" not in field:
+                log.warning(
+                    "Field '%s' in Typesense schema is missing 'type', "
+                    "defaulting to 'auto'.",
+                    field["name"],
+                )
+                field["type"] = "auto"
+
     def init_collection(self) -> None:
         ts = self.get_client()
         try:
@@ -234,6 +250,7 @@ class TypesenseConnector:
                     "name": aliased_index_name,
                 }
             )
+            self._sanitize_schema_fields(index_config)
             log.info(f"Create aliased_index_name '{aliased_index_name}'...")
             ts.collections.create(index_config)
             log.info(
