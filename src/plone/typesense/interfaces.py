@@ -7,8 +7,11 @@ from zope.publisher.interfaces.browser import IDefaultBrowserLayer
 from zope.interface import Interface
 
 class ITypesenseManager(Interface):
-    """
-    """
+    """Marker interface for TypesenseManager."""
+
+
+class IQueryAssembler(Interface):
+    """Assembles a Typesense query from a Plone catalog query."""
 
 class IPloneTypesenseLayer(IDefaultBrowserLayer):
     """Marker interface that defines a browser layer."""

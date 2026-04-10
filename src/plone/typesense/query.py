@@ -1,5 +1,5 @@
 from plone.typesense.indexes import TZCTextIndex
-from plone.typesense.indexes import getIndex
+from plone.typesense.indexes import get_index
 from plone.typesense.interfaces import IQueryAssembler
 from plone.typesense.utils import get_ts_only_indexes
 from zope.interface import implementer
@@ -44,7 +44,7 @@ class QueryAssembler:
         for key, value in dquery.items():
             if key not in idxs and key not in ts_only_indexes:
                 continue
-            index = getIndex(catalog, key)
+            index = get_index(catalog, key)
             if index is None and key in ts_only_indexes:
                 # deleted index for plone performance but still need on TS
                 index = TZCTextIndex(catalog, key)
