@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 """Tests for Typesense indexing integration.
 
-Test 1: Content creation triggers indexing in Typesense, and search finds
-    the page and event.
-Test 2: Typesense-only indexes are not stored in Plone catalog but search
-    still works via Typesense.
+Test 1 (TestTypesenseIndexing):
+    When the user creates a Page and an Event, the data is indexed in
+    Typesense. Searching in Plone returns the Page and Event.
+
+Test 2 (TestTypesenseOnlyIndexes):
+    When ts_only indexes are configured (SearchableText, Title, Description),
+    the content is only indexed in Typesense for those indexes, not in the
+    Plone catalog. Searching in Plone still finds the Page and Event because
+    search_results routes to Typesense.
 """
 from plone import api
 from plone.app.testing import setRoles
@@ -34,12 +39,13 @@ class TestTypesenseIndexing(unittest.TestCase):
         return processor
 
     def _make_connector_mock(self):
-        """Create a mock TypesenseConnector that records indexed/updated data."""
+        """Create a mock TypesenseConnector that records indexed/updated/deleted data."""
         connector = mock.MagicMock()
         connector.enabled = True
         connector.get_client.return_value = mock.MagicMock()
         connector.indexed_documents = []
         connector.updated_documents = []
+        connector.deleted_uids = []
 
         def _index(objects):
             connector.indexed_documents.extend(objects)
@@ -47,37 +53,31 @@ class TestTypesenseIndexing(unittest.TestCase):
         def _update(objects):
             connector.updated_documents.extend(objects)
 
+        def _delete(uids):
+            connector.deleted_uids.extend(uids)
+
         connector.index.side_effect = _index
         connector.update.side_effect = _update
+        connector.delete.side_effect = _delete
         return connector
 
-    def _commit_actions(self, processor, connector):
-        """Process queued actions and send them to the connector.
-
-        Replaces processor.commit() to safely handle cases where only
-        some action types are present.
-        """
-        actions = processor.actions
-        if not actions or len(actions) == 0:
-            return
-        ts_data = {}
-        for action, uuid, payload in actions.all():
-            payload = processor._prepare_for_typesense(uuid, payload)
-            ts_data.setdefault(action, []).append(payload)
-        if "index" in ts_data:
-            connector.index(ts_data["index"])
-        if "update" in ts_data:
-            connector.update(ts_data["update"])
-        processor._clean_up()
-
-    # -- indexing data collection --
-
-    def test_page_and_event_are_indexed_in_typesense(self):
-        """Creating a Page and Event triggers indexing in Typesense."""
+    def _make_processor_with_mock(self):
         connector = self._make_connector_mock()
         processor = self._get_processor()
         processor._ts_connector = connector
         processor._ts_client = connector.get_client()
+        return processor, connector
+
+    # -- indexing data collection and commit --
+
+    def test_page_and_event_are_indexed_in_typesense(self):
+        """Creating a Page and Event triggers indexing in Typesense.
+
+        Exercises the full commit() pipeline: index() -> commit() -> ts_index().
+        Previously commit_ts() would KeyError when only 'index' actions existed
+        (no 'update' key in ts_data).
+        """
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
@@ -97,13 +97,10 @@ class TestTypesenseIndexing(unittest.TestCase):
         )
         processor.index(event)
 
-        self._commit_actions(processor, connector)
+        # commit() calls commit_ts() which sends data to Typesense
+        processor.commit()
 
-        self.assertEqual(
-            len(connector.indexed_documents),
-            2,
-            f"Expected 2 indexed documents, got {len(connector.indexed_documents)}",
-        )
+        self.assertEqual(len(connector.indexed_documents), 2)
 
         page_uuid = api.content.get_uuid(page)
         event_uuid = api.content.get_uuid(event)
@@ -113,10 +110,7 @@ class TestTypesenseIndexing(unittest.TestCase):
 
     def test_indexed_page_data_contains_expected_fields(self):
         """Verify that indexed data contains Title, Description, SearchableText."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
@@ -126,7 +120,7 @@ class TestTypesenseIndexing(unittest.TestCase):
             description="This is a very important page",
         )
         processor.index(page)
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         page_uuid = api.content.get_uuid(page)
         page_docs = [
@@ -143,10 +137,7 @@ class TestTypesenseIndexing(unittest.TestCase):
 
     def test_indexed_event_data_contains_expected_fields(self):
         """Verify that indexed Event data contains expected fields."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        processor, connector = self._make_processor_with_mock()
 
         event = api.content.create(
             container=self.portal,
@@ -156,7 +147,7 @@ class TestTypesenseIndexing(unittest.TestCase):
             description="The annual conference event",
         )
         processor.index(event)
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         event_uuid = api.content.get_uuid(event)
         event_docs = [
@@ -173,10 +164,7 @@ class TestTypesenseIndexing(unittest.TestCase):
 
     def test_index_data_includes_path(self):
         """Indexed data should include the object path."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
@@ -185,7 +173,7 @@ class TestTypesenseIndexing(unittest.TestCase):
             title="Path Test Page",
         )
         processor.index(page)
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         page_uuid = api.content.get_uuid(page)
         page_doc = [
@@ -198,10 +186,7 @@ class TestTypesenseIndexing(unittest.TestCase):
 
     def test_index_data_includes_uuid_as_id(self):
         """The Typesense document id should be the object UUID."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
@@ -210,7 +195,7 @@ class TestTypesenseIndexing(unittest.TestCase):
             title="UUID Test",
         )
         processor.index(page)
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         page_uuid = api.content.get_uuid(page)
         doc_ids = [doc["id"] for doc in connector.indexed_documents]
@@ -218,10 +203,7 @@ class TestTypesenseIndexing(unittest.TestCase):
 
     def test_multiple_content_types_indexed_together(self):
         """Multiple content types are indexed in a single commit."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
@@ -237,30 +219,53 @@ class TestTypesenseIndexing(unittest.TestCase):
         )
         processor.index(page)
         processor.index(event)
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         self.assertEqual(len(connector.indexed_documents), 2)
         indexed_types = {doc["portal_type"] for doc in connector.indexed_documents}
         self.assertIn("Document", indexed_types)
         self.assertIn("Event", indexed_types)
 
+    def test_commit_with_only_index_actions(self):
+        """commit_ts handles the case where only 'index' actions exist.
+
+        This is a regression test for the KeyError bug where commit_ts
+        unconditionally accessed ts_data['update'] even when no reindex
+        actions were queued.
+        """
+        processor, connector = self._make_processor_with_mock()
+
+        page = api.content.create(
+            container=self.portal,
+            type="Document",
+            id="index-only-page",
+            title="Index Only Page",
+        )
+        processor.index(page)
+        # This must not raise KeyError
+        processor.commit()
+
+        self.assertEqual(len(connector.indexed_documents), 1)
+        # update and delete should NOT have been called
+        connector.update.assert_not_called()
+        connector.delete.assert_not_called()
+
     def test_reindex_sends_update_to_typesense(self):
-        """Reindexing content sends an update action to Typesense."""
-        connector = self._make_connector_mock()
-        processor = self._get_processor()
-        processor._ts_connector = connector
-        processor._ts_client = connector.get_client()
+        """Reindexing content sends an update action to Typesense.
+
+        When reindex() is called with specific attributes on an object that
+        is NOT already in the index queue, it goes to actions.reindex which
+        maps to the 'update' action type.
+        """
+        processor, connector = self._make_processor_with_mock()
 
         page = api.content.create(
             container=self.portal,
             type="Document",
             id="reindex-page",
             title="Original Title",
-            description="Original description",
         )
-
-        # Initial index + reindex with specific attributes to create both
-        # action types in the queue
+        # First index the page (creates 'index' action)
         processor.index(page)
 
         event = api.content.create(
@@ -269,21 +274,99 @@ class TestTypesenseIndexing(unittest.TestCase):
             id="reindex-event",
             title="Some Event",
         )
-        # This will be queued as a reindex (update) since we pass attributes
-        # and the event is not yet in the index queue
+        # Reindex with specific attributes creates 'update' action
         processor.reindex(event, attributes=["Title", "Description"])
-        self._commit_actions(processor, connector)
+        processor.commit()
 
         page_uuid = api.content.get_uuid(page)
         event_uuid = api.content.get_uuid(event)
 
-        # page should be in indexed documents
         indexed_ids = {doc["id"] for doc in connector.indexed_documents}
         self.assertIn(page_uuid, indexed_ids)
 
-        # event should be in updated documents (reindex -> update action)
         updated_ids = {doc["id"] for doc in connector.updated_documents}
         self.assertIn(event_uuid, updated_ids)
+
+    def test_unindex_queues_delete_action(self):
+        """unindex() queues a delete action for the object.
+
+        This is a regression test: previously unindex() only printed a
+        debug message but never actually added the object to actions.unindex.
+        """
+        processor, connector = self._make_processor_with_mock()
+
+        page = api.content.create(
+            container=self.portal,
+            type="Document",
+            id="unindex-page",
+            title="Page To Delete",
+        )
+        page_uuid = api.content.get_uuid(page)
+
+        processor.unindex(page)
+
+        # Verify action was queued
+        self.assertIn(page_uuid, processor.actions.unindex)
+        self.assertEqual(processor.actions.unindex[page_uuid]["id"], page_uuid)
+
+    def test_unindex_commit_calls_delete(self):
+        """commit() after unindex() calls ts_delete on the connector.
+
+        This is a regression test: previously commit_ts() did not handle
+        'delete' actions at all.
+        """
+        processor, connector = self._make_processor_with_mock()
+
+        page = api.content.create(
+            container=self.portal,
+            type="Document",
+            id="delete-page",
+            title="Page To Delete",
+        )
+        page_uuid = api.content.get_uuid(page)
+
+        processor.unindex(page)
+        processor.commit()
+
+        self.assertIn(page_uuid, connector.deleted_uids)
+
+    def test_unindex_removes_pending_index(self):
+        """unindex() removes the object from pending index/reindex queues."""
+        processor, connector = self._make_processor_with_mock()
+
+        page = api.content.create(
+            container=self.portal,
+            type="Document",
+            id="pending-page",
+            title="Pending Page",
+        )
+        page_uuid = api.content.get_uuid(page)
+
+        # First queue an index
+        processor.index(page)
+        self.assertIn(page_uuid, processor.actions.index)
+
+        # Then unindex should remove from index queue
+        processor.unindex(page)
+        self.assertNotIn(page_uuid, processor.actions.index)
+        self.assertIn(page_uuid, processor.actions.unindex)
+
+    def test_abort_cleans_up_actions(self):
+        """abort() should clean up any pending actions."""
+        processor, connector = self._make_processor_with_mock()
+
+        page = api.content.create(
+            container=self.portal,
+            type="Document",
+            id="abort-page",
+            title="Abort Page",
+        )
+        processor.index(page)
+        self.assertTrue(len(processor.actions) > 0)
+
+        processor.abort()
+        # After abort, actions should be cleaned up
+        self.assertIsNone(processor._actions)
 
     # -- Plone catalog search --
 
@@ -346,7 +429,7 @@ class TestTypesenseOnlyIndexes(unittest.TestCase):
     """Test 2: When using Typesense-only indexes (e.g. SearchableText, Title,
     Description), the content is only indexed in Typesense and NOT in the Plone
     catalog for those indexes. But searching in Plone still finds the content
-    because the search is routed to Typesense.
+    because search_results routes to Typesense.
     """
 
     layer = PLONE_TYPESENSE_INTEGRATION_TESTING
@@ -464,8 +547,12 @@ class TestTypesenseOnlyIndexes(unittest.TestCase):
         self.assertIn("SearchableText", data)
         self.assertIn("Event Data Check", data["SearchableText"])
 
-    def test_ts_only_index_data_sent_to_typesense(self):
-        """Data for ts_only indexes is collected and included when sent to Typesense."""
+    def test_ts_only_index_data_sent_to_typesense_via_commit(self):
+        """ts_only index data is sent to Typesense through the full commit() pipeline.
+
+        This exercises the complete path: index() -> commit() -> commit_ts()
+        -> ts_index() -> connector.index().
+        """
         from plone.typesense.queueprocessor import IndexProcessor
 
         connector = mock.MagicMock()
@@ -490,16 +577,8 @@ class TestTypesenseOnlyIndexes(unittest.TestCase):
             description="Indexed only in typesense",
         )
         processor.index(page)
-
-        # Process actions manually to avoid KeyError on missing action types
-        actions = processor.actions
-        ts_data = {}
-        for action, uuid, payload in actions.all():
-            payload = processor._prepare_for_typesense(uuid, payload)
-            ts_data.setdefault(action, []).append(payload)
-        if "index" in ts_data:
-            connector.index(ts_data["index"])
-        processor._clean_up()
+        # Use the real commit() - this previously would have raised KeyError
+        processor.commit()
 
         page_uuid = api.content.get_uuid(page)
         page_docs = [
@@ -515,7 +594,11 @@ class TestTypesenseOnlyIndexes(unittest.TestCase):
     # -- Search routing: ts_only queries go to Typesense --
 
     def test_search_results_routes_to_typesense_for_searchabletext(self):
-        """When query contains SearchableText (ts_only), search routes to Typesense."""
+        """When query contains SearchableText (ts_only), search routes to Typesense.
+
+        Exercises manager.search_results() with self.active (previously
+        self.enabled, which didn't exist as a property named 'active').
+        """
         from plone.typesense.manager import TypesenseManager
 
         manager = TypesenseManager()

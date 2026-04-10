@@ -17,20 +17,20 @@ class TypesenseManager:
     """
 
     _catalog: CatalogTool = None
+    raise_search_exception: bool = False
 
     @property
     def catalog(self):
         return api.portal.get_tool("portal_catalog")
 
     @property
-    def enabled(self):
+    def active(self):
         try:
             return api.portal.get_registry_record(
                 "plone.typesense.typesense_controlpanel.enabled"
             )
         except api.exc.InvalidParameterError:
-            value = False
-        return value
+            return False
 
     # XXX
     def get_record_by_path(self, path: str) -> dict:
@@ -45,9 +45,9 @@ class TypesenseManager:
         """Bulk size of TypeSense calls."""
         try:
             value = api.portal.get_registry_record(
-                "bulk_size", interfaces.ITypesenseSettings, 50
+                "plone.typesense.typesense_controlpanel.bulk_size"
             )
-        except KeyError:
+        except (KeyError, api.exc.InvalidParameterError):
             value = 50
         return value
 
@@ -56,9 +56,9 @@ class TypesenseManager:
         """Is search highlighting enabled in the control panel."""
         try:
             value = api.portal.get_registry_record(
-                "highlight", interfaces.ITypesenseSettings, False
+                "plone.typesense.typesense_controlpanel.highlight"
             )
-        except KeyError:
+        except (KeyError, api.exc.InvalidParameterError):
             value = False
         return value
 
