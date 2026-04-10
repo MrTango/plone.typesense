@@ -18,15 +18,17 @@ def get_settings():
     return settings
 
 
+TS_ONLY_INDEXES_DEFAULT = {"Title", "Description", "SearchableText"}
+
+
 def get_ts_only_indexes():
-    """
-    """
+    """Return the set of index names that should only be stored in Typesense."""
     settings = get_settings()
     try:
         indexes = settings.ts_only_indexes
-        return set(indexes) if indexes else set()
+        return set(indexes) if indexes else TS_ONLY_INDEXES_DEFAULT
     except (KeyError, AttributeError):
-        return ["Title", "Description", "SearchableText"]
+        return TS_ONLY_INDEXES_DEFAULT
 
 
 def get_brain_from_path(zcatalog: ZCatalog, path: str) -> AbstractCatalogBrain:

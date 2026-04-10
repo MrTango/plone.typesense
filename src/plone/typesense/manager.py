@@ -11,6 +11,20 @@ from Products.CMFCore.permissions import AccessInactivePortalContent
 from plone.typesense import log
 
 
+def patch_catalog(catalog):
+    """Save original search methods before replacing them.
+
+    This must be called once (e.g. during site setup) so that
+    TypesenseManager.search_results can fall back to the originals.
+    """
+    if not hasattr(catalog, "_old_searchResults"):
+        catalog._old_searchResults = catalog.searchResults
+    if not hasattr(catalog, "_old_unrestrictedSearchResults"):
+        catalog._old_unrestrictedSearchResults = (
+            catalog.unrestrictedSearchResults
+        )
+
+
 @implementer(interfaces.ITypesenseManager)
 class TypesenseManager:
     """
@@ -62,6 +76,22 @@ class TypesenseManager:
             value = False
         return value
 
+    def _catalog_search(self, catalog, check_perms, request, **kw):
+        """Fall back to the original catalog search methods."""
+        if hasattr(catalog, "_old_searchResults"):
+            method = (
+                catalog._old_searchResults
+                if check_perms
+                else catalog._old_unrestrictedSearchResults
+            )
+        else:
+            method = (
+                catalog.searchResults
+                if check_perms
+                else catalog.unrestrictedSearchResults
+            )
+        return method(request, **kw)
+
     def search(self, query: dict, factory=None, **query_params) -> LazyMap:
         """
         @param query: The Plone query
@@ -78,12 +108,9 @@ class TypesenseManager:
         # Make sure any pending index tasks have been processed
         processQueue()
         if not (self.active and utils.get_ts_only_indexes().intersection(kw.keys())):
-            method = (
-                self.catalog._old_searchResults
-                if check_perms
-                else self.catalog._old_unrestrictedSearchResults
+            return self._catalog_search(
+                self.catalog, check_perms, request, **kw
             )
-            return method(request, **kw)
 
         query = request.copy() if isinstance(request, dict) else {}
         query.update(kw)
@@ -108,4 +135,6 @@ class TypesenseManager:
             if self.raise_search_exception is True:
                 raise
             log.error(f"Error running Query: {orig_query}", exc_info=True)
-            return self.catalog._old_searchResults(request, **kw)
+            return self._catalog_search(
+                self.catalog, check_perms, request, **kw
+            )
